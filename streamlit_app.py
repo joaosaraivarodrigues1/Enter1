@@ -23,6 +23,10 @@ def load_table(table: str):
         st.error(f"Erro ao carregar '{table}': {e}")
         return pd.DataFrame()
 
+# Debug temporario - remover depois
+key = st.secrets.get("SUPABASE_KEY", "NAO ENCONTRADA")
+st.code(f"KEY length={len(key)}  inicio={key[:20]}  fim={key[-20:]}")
+
 # Titulo
 st.title("📄 Enter — Painel de Contratos")
 
