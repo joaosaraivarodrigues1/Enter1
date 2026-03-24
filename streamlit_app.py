@@ -16,8 +16,12 @@ def get_supabase():
 @st.cache_data(ttl=60)
 def load_table(table: str):
     client = get_supabase()
-    res = client.table(table).select("*").execute()
-    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    try:
+        res = client.table(table).select("*").execute()
+        return pd.DataFrame(res.data) if res.data else pd.DataFrame()
+    except Exception as e:
+        st.error(f"Erro ao carregar '{table}': {e}")
+        return pd.DataFrame()
 
 # Titulo
 st.title("📄 Enter — Painel de Contratos")
