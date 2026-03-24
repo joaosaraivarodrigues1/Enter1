@@ -9,7 +9,6 @@ st.set_page_config(
     layout="wide",
 )
 
-@st.cache_resource
 def get_supabase():
     url = st.secrets["SUPABASE_URL"].strip()
     key = st.secrets["SUPABASE_KEY"].strip()
