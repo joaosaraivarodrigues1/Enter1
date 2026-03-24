@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import streamlit as st
 import pandas as pd
+import requests as http
+
 from supabase import create_client
 
 st.set_page_config(
@@ -9,6 +11,7 @@ st.set_page_config(
     layout="wide",
 )
 
+@st.cache_resource
 def get_supabase():
     url = st.secrets["SUPABASE_URL"].strip()
     key = st.secrets["SUPABASE_KEY"].strip()
@@ -24,10 +27,11 @@ def load_table(table: str):
         st.error(f"Erro ao carregar '{table}': {e}")
         return pd.DataFrame()
 
-# Debug temporario - remover depois
-url = st.secrets.get("SUPABASE_URL", "NAO ENCONTRADA").strip()
-key = st.secrets.get("SUPABASE_KEY", "NAO ENCONTRADA").strip()
-st.code(f"URL={url}\nKEY length={len(key)}  inicio={key[:20]}  fim={key[-20:]}")
+def functions_url():
+    return st.secrets["SUPABASE_URL"].strip() + "/functions/v1"
+
+def auth_header():
+    return {"Authorization": f"Bearer {st.secrets['SUPABASE_KEY'].strip()}"}
 
 # Titulo
 st.title("📄 Enter — Painel de Contratos")
@@ -47,7 +51,65 @@ col4.metric("Vínculos",    len(links))
 st.divider()
 
 # Abas
-tab1, tab2, tab3, tab4 = st.tabs(["📁 Documentos", "🔍 Análises", "🏢 Clientes", "🔗 Vínculos"])
+tab0, tab1, tab2, tab3, tab4 = st.tabs([
+    "📤 Upload", "📁 Documentos", "🔍 Análises", "🏢 Clientes", "🔗 Vínculos"
+])
+
+# Tab 0 - Upload
+with tab0:
+    st.subheader("Enviar novo contrato")
+    st.caption("O arquivo será enviado ao Supabase e analisado automaticamente pelo Claude.")
+
+    uploaded = st.file_uploader("Selecione um PDF", type=["pdf"], label_visibility="collapsed")
+
+    if uploaded is not None:
+        st.info(f"Arquivo: **{uploaded.name}** ({uploaded.size / 1024:.0f} KB)")
+
+        if st.button("Enviar e analisar", type="primary"):
+            with st.spinner("Fazendo upload..."):
+                try:
+                    resp = http.post(
+                        f"{functions_url()}/ingest",
+                        headers=auth_header(),
+                        files={"file": (uploaded.name, uploaded.getvalue(), "application/pdf")},
+                        timeout=30,
+                    )
+                    data = resp.json()
+                except Exception as e:
+                    st.error(f"Erro de conexão: {e}")
+                    data = None
+
+            if data and resp.status_code == 200:
+                st.success(f"Upload concluído! ID: `{data['id']}`")
+                st.caption("A análise pelo Claude começa automaticamente via Database Webhook. Aguarde alguns instantes e atualize a aba Documentos.")
+                st.cache_data.clear()
+            elif data:
+                st.error(f"Erro no upload: {data.get('error', resp.text)}")
+
+    st.divider()
+    st.subheader("Reanalisar documento existente")
+    st.caption("Use o ID de um documento com status 'analyzed' ou 'failed' para rodar a análise novamente.")
+
+    reanalyze_id = st.text_input("ID do documento", placeholder="uuid do documento")
+    if st.button("Reanalisar", disabled=not reanalyze_id):
+        with st.spinner("Reenviando para análise..."):
+            try:
+                resp = http.post(
+                    f"{functions_url()}/extract-pdf",
+                    headers={**auth_header(), "Content-Type": "application/json"},
+                    json={"document_id": reanalyze_id.strip()},
+                    timeout=180,
+                )
+                data = resp.json()
+            except Exception as e:
+                st.error(f"Erro: {e}")
+                data = None
+
+        if data and resp.status_code == 200:
+            st.success(f"Reanálise concluída! Status: `{data.get('status')}`")
+            st.cache_data.clear()
+        elif data:
+            st.error(f"Erro: {data.get('error', resp.text)}")
 
 # Tab 1 - Documentos
 with tab1:
