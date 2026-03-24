@@ -1,290 +1,149 @@
-from collections import defaultdict
-from pathlib import Path
-import sqlite3
-
+# -*- coding: utf-8 -*-
 import streamlit as st
-import altair as alt
 import pandas as pd
+from supabase import create_client
 
-
-# Set the title and favicon that appear in the Browser's tab bar.
 st.set_page_config(
-    page_title="Inventory tracker",
-    page_icon=":shopping_bags:",  # This is an emoji shortcode. Could be a URL too.
+    page_title="Enter - Contratos",
+    page_icon="📄",
+    layout="wide",
 )
 
+@st.cache_resource
+def get_supabase():
+    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
 
-# -----------------------------------------------------------------------------
-# Declare some useful functions.
+@st.cache_data(ttl=60)
+def load_table(table: str):
+    client = get_supabase()
+    res = client.table(table).select("*").execute()
+    return pd.DataFrame(res.data) if res.data else pd.DataFrame()
 
+# Titulo
+st.title("📄 Enter — Painel de Contratos")
 
-def connect_db():
-    """Connects to the sqlite database."""
+# Metricas resumo
+docs     = load_table("documents")
+analyses = load_table("document_analysis")
+clients  = load_table("clients")
+links    = load_table("document_client_links")
 
-    DB_FILENAME = Path(__file__).parent / "inventory.db"
-    db_already_exists = DB_FILENAME.exists()
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Documentos",  len(docs))
+col2.metric("Analisados",  len(analyses))
+col3.metric("Clientes",    len(clients))
+col4.metric("Vínculos",    len(links))
 
-    conn = sqlite3.connect(DB_FILENAME)
-    db_was_just_created = not db_already_exists
+st.divider()
 
-    return conn, db_was_just_created
+# Abas
+tab1, tab2, tab3, tab4 = st.tabs(["📁 Documentos", "🔍 Análises", "🏢 Clientes", "🔗 Vínculos"])
 
+# Tab 1 - Documentos
+with tab1:
+    st.subheader("Documentos")
 
-def initialize_data(conn):
-    """Initializes the inventory table with some data."""
-    cursor = conn.cursor()
+    if docs.empty:
+        st.info("Nenhum documento encontrado.")
+    else:
+        statuses = ["Todos"] + sorted(docs["status"].dropna().unique().tolist()) if "status" in docs.columns else ["Todos"]
+        sel = st.selectbox("Filtrar por status", statuses, key="docs_status")
+        df = docs if sel == "Todos" else docs[docs["status"] == sel]
 
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS inventory (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            item_name TEXT,
-            price REAL,
-            units_sold INTEGER,
-            units_left INTEGER,
-            cost_price REAL,
-            reorder_point INTEGER,
-            description TEXT
-        )
-        """
-    )
+        cols = [c for c in ["id", "original_filename", "status", "size_bytes", "mime_type", "created_at", "updated_at"] if c in df.columns]
+        st.dataframe(df[cols], use_container_width=True, hide_index=True)
 
-    cursor.execute(
-        """
-        INSERT INTO inventory
-            (item_name, price, units_sold, units_left, cost_price, reorder_point, description)
-        VALUES
-            -- Beverages
-            ('Bottled Water (500ml)', 1.50, 115, 15, 0.80, 16, 'Hydrating bottled water'),
-            ('Soda (355ml)', 2.00, 93, 8, 1.20, 10, 'Carbonated soft drink'),
-            ('Energy Drink (250ml)', 2.50, 12, 18, 1.50, 8, 'High-caffeine energy drink'),
-            ('Coffee (hot, large)', 2.75, 11, 14, 1.80, 5, 'Freshly brewed hot coffee'),
-            ('Juice (200ml)', 2.25, 11, 9, 1.30, 5, 'Fruit juice blend'),
+        if "status" in docs.columns:
+            st.subheader("Distribuição por status")
+            status_counts = docs["status"].value_counts().reset_index()
+            status_counts.columns = ["status", "qtd"]
+            st.bar_chart(status_counts.set_index("status"))
 
-            -- Snacks
-            ('Potato Chips (small)', 2.00, 34, 16, 1.00, 10, 'Salted and crispy potato chips'),
-            ('Candy Bar', 1.50, 6, 19, 0.80, 15, 'Chocolate and candy bar'),
-            ('Granola Bar', 2.25, 3, 12, 1.30, 8, 'Healthy and nutritious granola bar'),
-            ('Cookies (pack of 6)', 2.50, 8, 8, 1.50, 5, 'Soft and chewy cookies'),
-            ('Fruit Snack Pack', 1.75, 5, 10, 1.00, 8, 'Assortment of dried fruits and nuts'),
+# Tab 2 - Análises
+with tab2:
+    st.subheader("Análises de documentos")
 
-            -- Personal Care
-            ('Toothpaste', 3.50, 1, 9, 2.00, 5, 'Minty toothpaste for oral hygiene'),
-            ('Hand Sanitizer (small)', 2.00, 2, 13, 1.20, 8, 'Small sanitizer bottle for on-the-go'),
-            ('Pain Relievers (pack)', 5.00, 1, 5, 3.00, 3, 'Over-the-counter pain relief medication'),
-            ('Bandages (box)', 3.00, 0, 10, 2.00, 5, 'Box of adhesive bandages for minor cuts'),
-            ('Sunscreen (small)', 5.50, 6, 5, 3.50, 3, 'Small bottle of sunscreen for sun protection'),
+    if analyses.empty:
+        st.info("Nenhuma análise encontrada.")
+    else:
+        tipos = ["Todos"] + sorted(analyses["instrument_type"].dropna().unique().tolist()) if "instrument_type" in analyses.columns else ["Todos"]
+        sel_tipo = st.selectbox("Filtrar por tipo", tipos, key="analysis_tipo")
+        df_a = analyses if sel_tipo == "Todos" else analyses[analyses["instrument_type"] == sel_tipo]
 
-            -- Household
-            ('Batteries (AA, pack of 4)', 4.00, 1, 5, 2.50, 3, 'Pack of 4 AA batteries'),
-            ('Light Bulbs (LED, 2-pack)', 6.00, 3, 3, 4.00, 2, 'Energy-efficient LED light bulbs'),
-            ('Trash Bags (small, 10-pack)', 3.00, 5, 10, 2.00, 5, 'Small trash bags for everyday use'),
-            ('Paper Towels (single roll)', 2.50, 3, 8, 1.50, 5, 'Single roll of paper towels'),
-            ('Multi-Surface Cleaner', 4.50, 2, 5, 3.00, 3, 'All-purpose cleaning spray'),
+        priority_cols = [
+            "id", "document_id", "instrument_type", "title_or_heading",
+            "is_signed", "signature_date", "effective_date", "end_date",
+            "contract_value", "payment_terms", "signing_city",
+            "signing_platform", "object_summary", "prompt_version", "model",
+        ]
+        cols_a = [c for c in priority_cols if c in df_a.columns]
+        st.dataframe(df_a[cols_a], use_container_width=True, hide_index=True)
 
-            -- Others
-            ('Lottery Tickets', 2.00, 17, 20, 1.50, 10, 'Assorted lottery tickets'),
-            ('Newspaper', 1.50, 22, 20, 1.00, 5, 'Daily newspaper')
-        """
-    )
-    conn.commit()
+        if "contract_value" in analyses.columns and "instrument_type" in analyses.columns:
+            st.subheader("Valor total por tipo de instrumento (R$)")
+            val = (
+                analyses.dropna(subset=["contract_value"])
+                .groupby("instrument_type")["contract_value"]
+                .sum()
+                .reset_index()
+                .sort_values("contract_value", ascending=False)
+            )
+            if not val.empty:
+                st.bar_chart(val.set_index("instrument_type"))
 
+# Tab 3 - Clientes
+with tab3:
+    st.subheader("Clientes")
 
-def load_data(conn):
-    """Loads the inventory data from the database."""
-    cursor = conn.cursor()
+    if clients.empty:
+        st.info("Nenhum cliente encontrado.")
+    else:
+        search = st.text_input("Buscar por nome", key="client_search")
+        df_c = clients
+        if search:
+            mask = df_c.apply(lambda col: col.astype(str).str.contains(search, case=False, na=False)).any(axis=1)
+            df_c = df_c[mask]
 
-    try:
-        cursor.execute("SELECT * FROM inventory")
-        data = cursor.fetchall()
-    except:
-        return None
+        priority_cols_c = [
+            "id", "legal_name", "client_type", "cpf_cnpj",
+            "address_city", "address_state", "email", "phone",
+            "representative_name", "created_at",
+        ]
+        cols_c = [c for c in priority_cols_c if c in df_c.columns]
+        st.dataframe(df_c[cols_c], use_container_width=True, hide_index=True)
 
-    df = pd.DataFrame(
-        data,
-        columns=[
-            "id",
-            "item_name",
-            "price",
-            "units_sold",
-            "units_left",
-            "cost_price",
-            "reorder_point",
-            "description",
-        ],
-    )
+        col_a, col_b = st.columns(2)
+        if "client_type" in clients.columns:
+            tipo_counts = clients["client_type"].value_counts().reset_index()
+            tipo_counts.columns = ["tipo", "qtd"]
+            col_a.subheader("PF vs PJ")
+            col_a.bar_chart(tipo_counts.set_index("tipo"))
 
-    return df
+        if "address_state" in clients.columns:
+            state_counts = clients["address_state"].value_counts().head(10).reset_index()
+            state_counts.columns = ["UF", "qtd"]
+            col_b.subheader("Top estados")
+            col_b.bar_chart(state_counts.set_index("UF"))
 
+# Tab 4 - Vínculos
+with tab4:
+    st.subheader("Vínculos documento - cliente")
 
-def update_data(conn, df, changes):
-    """Updates the inventory data in the database."""
-    cursor = conn.cursor()
+    if links.empty:
+        st.info("Nenhum vínculo encontrado.")
+    else:
+        if not clients.empty and "id" in clients.columns and "legal_name" in clients.columns:
+            client_map = clients.set_index("id")["legal_name"].to_dict()
+            links_view = links.copy()
+            links_view["client_name"] = links_view["client_id"].map(client_map)
+        else:
+            links_view = links.copy()
 
-    if changes["edited_rows"]:
-        deltas = st.session_state.inventory_table["edited_rows"]
-        rows = []
+        cols_l = [c for c in ["id", "document_id", "client_id", "client_name", "role_in_document", "source", "created_at"] if c in links_view.columns]
+        st.dataframe(links_view[cols_l], use_container_width=True, hide_index=True)
 
-        for i, delta in deltas.items():
-            row_dict = df.iloc[i].to_dict()
-            row_dict.update(delta)
-            rows.append(row_dict)
-
-        cursor.executemany(
-            """
-            UPDATE inventory
-            SET
-                item_name = :item_name,
-                price = :price,
-                units_sold = :units_sold,
-                units_left = :units_left,
-                cost_price = :cost_price,
-                reorder_point = :reorder_point,
-                description = :description
-            WHERE id = :id
-            """,
-            rows,
-        )
-
-    if changes["added_rows"]:
-        cursor.executemany(
-            """
-            INSERT INTO inventory
-                (id, item_name, price, units_sold, units_left, cost_price, reorder_point, description)
-            VALUES
-                (:id, :item_name, :price, :units_sold, :units_left, :cost_price, :reorder_point, :description)
-            """,
-            (defaultdict(lambda: None, row) for row in changes["added_rows"]),
-        )
-
-    if changes["deleted_rows"]:
-        cursor.executemany(
-            "DELETE FROM inventory WHERE id = :id",
-            ({"id": int(df.loc[i, "id"])} for i in changes["deleted_rows"]),
-        )
-
-    conn.commit()
-
-
-# -----------------------------------------------------------------------------
-# Draw the actual page, starting with the inventory table.
-
-# Set the title that appears at the top of the page.
-"""
-# :shopping_bags: Inventory tracker
-
-**Welcome to Alice's Corner Store's intentory tracker!**
-This page reads and writes directly from/to our inventory database.
-"""
-
-st.info(
-    """
-    Use the table below to add, remove, and edit items.
-    And don't forget to commit your changes when you're done.
-    """
-)
-
-# Connect to database and create table if needed
-conn, db_was_just_created = connect_db()
-
-# Initialize data.
-if db_was_just_created:
-    initialize_data(conn)
-    st.toast("Database initialized with some sample data.")
-
-# Load data from database
-df = load_data(conn)
-
-# Display data with editable table
-edited_df = st.data_editor(
-    df,
-    disabled=["id"],  # Don't allow editing the 'id' column.
-    num_rows="dynamic",  # Allow appending/deleting rows.
-    column_config={
-        # Show dollar sign before price columns.
-        "price": st.column_config.NumberColumn(format="$%.2f"),
-        "cost_price": st.column_config.NumberColumn(format="$%.2f"),
-    },
-    key="inventory_table",
-)
-
-has_uncommitted_changes = any(len(v) for v in st.session_state.inventory_table.values())
-
-st.button(
-    "Commit changes",
-    type="primary",
-    disabled=not has_uncommitted_changes,
-    # Update data in database
-    on_click=update_data,
-    args=(conn, df, st.session_state.inventory_table),
-)
-
-
-# -----------------------------------------------------------------------------
-# Now some cool charts
-
-# Add some space
-""
-""
-""
-
-st.subheader("Units left", divider="red")
-
-need_to_reorder = df[df["units_left"] < df["reorder_point"]].loc[:, "item_name"]
-
-if len(need_to_reorder) > 0:
-    items = "\n".join(f"* {name}" for name in need_to_reorder)
-
-    st.error(f"We're running dangerously low on the items below:\n {items}")
-
-""
-""
-
-st.altair_chart(
-    # Layer 1: Bar chart.
-    alt.Chart(df)
-    .mark_bar(
-        orient="horizontal",
-    )
-    .encode(
-        x="units_left",
-        y="item_name",
-    )
-    # Layer 2: Chart showing the reorder point.
-    + alt.Chart(df)
-    .mark_point(
-        shape="diamond",
-        filled=True,
-        size=50,
-        color="salmon",
-        opacity=1,
-    )
-    .encode(
-        x="reorder_point",
-        y="item_name",
-    ),
-    use_container_width=True,
-)
-
-st.caption("NOTE: The :diamonds: location shows the reorder point.")
-
-""
-""
-""
-
-# -----------------------------------------------------------------------------
-
-st.subheader("Best sellers", divider="orange")
-
-""
-""
-
-st.altair_chart(
-    alt.Chart(df)
-    .mark_bar(orient="horizontal")
-    .encode(
-        x="units_sold",
-        y=alt.Y("item_name").sort("-x"),
-    ),
-    use_container_width=True,
-)
+        if "role_in_document" in links.columns:
+            st.subheader("Papéis nos documentos")
+            role_counts = links["role_in_document"].value_counts().reset_index()
+            role_counts.columns = ["papel", "qtd"]
+            st.bar_chart(role_counts.set_index("papel"))
