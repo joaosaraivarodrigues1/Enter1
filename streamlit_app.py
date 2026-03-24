@@ -11,7 +11,9 @@ st.set_page_config(
 
 @st.cache_resource
 def get_supabase():
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    url = st.secrets["SUPABASE_URL"].strip()
+    key = st.secrets["SUPABASE_KEY"].strip()
+    return create_client(url, key)
 
 @st.cache_data(ttl=60)
 def load_table(table: str):
@@ -24,8 +26,9 @@ def load_table(table: str):
         return pd.DataFrame()
 
 # Debug temporario - remover depois
-key = st.secrets.get("SUPABASE_KEY", "NAO ENCONTRADA")
-st.code(f"KEY length={len(key)}  inicio={key[:20]}  fim={key[-20:]}")
+url = st.secrets.get("SUPABASE_URL", "NAO ENCONTRADA").strip()
+key = st.secrets.get("SUPABASE_KEY", "NAO ENCONTRADA").strip()
+st.code(f"URL={url}\nKEY length={len(key)}  inicio={key[:20]}  fim={key[-20:]}")
 
 # Titulo
 st.title("📄 Enter — Painel de Contratos")
