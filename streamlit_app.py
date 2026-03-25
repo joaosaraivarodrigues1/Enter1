@@ -33,6 +33,37 @@ def functions_url():
 def auth_header():
     return {"Authorization": f"Bearer {st.secrets['SUPABASE_KEY'].strip()}"}
 
+def fetch_failed_documents():
+    client = get_supabase()
+    try:
+        res = (
+            client.table("documents")
+            .select("id, original_filename, error_message, updated_at")
+            .eq("status", "failed")
+            .order("updated_at", desc=True)
+            .execute()
+        )
+        return res.data or []
+    except Exception as e:
+        st.error(f"Erro ao carregar documentos com falha: {e}")
+        return []
+
+def reanalyze_document(doc_id: str):
+    try:
+        resp = http.post(
+            f"{functions_url()}/extract-pdf",
+            headers={**auth_header(), "Content-Type": "application/json"},
+            json={"document_id": doc_id},
+            timeout=180,
+        )
+        if resp.ok:
+            return True, "Reanálise concluída com sucesso."
+        return False, f"Erro {resp.status_code}: {resp.text[:200]}"
+    except http.exceptions.Timeout:
+        return False, "Timeout: a reanálise demorou mais de 3 minutos."
+    except Exception as e:
+        return False, str(e)
+
 # Titulo
 st.title("📄 Enter — Painel de Contratos")
 
@@ -130,6 +161,44 @@ with tab1:
             status_counts = docs["status"].value_counts().reset_index()
             status_counts.columns = ["status", "qtd"]
             st.bar_chart(status_counts.set_index("status"))
+
+    # Documentos com erro
+    st.divider()
+    col_err_title, col_err_refresh = st.columns([8, 1])
+    col_err_title.subheader("⚠️ Documentos com erro")
+    if col_err_refresh.button("Atualizar", key="refresh_failed"):
+        st.cache_data.clear()
+        st.rerun()
+
+    failed_docs = fetch_failed_documents()
+
+    if not failed_docs:
+        st.success("Nenhum documento com erro.")
+    else:
+        st.caption(f"{len(failed_docs)} documento(s) com status **failed**")
+        for doc in failed_docs:
+            doc_id = doc["id"]
+            filename = doc.get("original_filename") or doc_id
+            error_msg = doc.get("error_message") or "Erro desconhecido"
+            updated = doc.get("updated_at", "")[:19].replace("T", " ") if doc.get("updated_at") else ""
+
+            with st.container(border=True):
+                col_info, col_btn = st.columns([5, 1])
+                with col_info:
+                    st.markdown(f"**{filename}**")
+                    st.caption(f"ID: `{doc_id}`  •  Atualizado: {updated}")
+                    st.error(error_msg, icon="🔴")
+                with col_btn:
+                    st.write("")
+                    if st.button("Reanalisar", key=f"reanalyze_{doc_id}", use_container_width=True):
+                        with st.spinner(f"Reanalysando {filename}..."):
+                            ok, msg = reanalyze_document(doc_id)
+                        if ok:
+                            st.success(msg)
+                            st.cache_data.clear()
+                            st.rerun()
+                        else:
+                            st.error(msg)
 
 # Tab 2 - Análises
 with tab2:
