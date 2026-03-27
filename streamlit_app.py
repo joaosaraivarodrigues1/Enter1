@@ -231,9 +231,9 @@ elif st.session_state.page == "indice_mercado":
                 texto = f"{val:.2f}%" if pd.notna(val) else "—"
                 st.markdown(
                     f"""
-                    <div style="padding:18px 0 10px 0; border-bottom:1px solid #e0e0e0;">
-                        <div style="font-size:15px; color:#888;">{label}</div>
-                        <div style="font-size:42px; font-weight:700; line-height:1.1;">{texto}</div>
+                    <div style="padding:22px 0 14px 0; border-bottom:1px solid #333;">
+                        <div style="font-size:22px; color:#aaa; font-weight:500; margin-bottom:4px;">{label}</div>
+                        <div style="font-size:84px; font-weight:700; line-height:1.0;">{texto}</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -244,31 +244,45 @@ elif st.session_state.page == "indice_mercado":
             df_chart = df_sorted[["mes"] + list(INDICES.keys())].copy()
             df_chart["mes"] = pd.to_datetime(df_chart["mes"] + "-01")
 
+            CORES = ["#ffffff", "#7dd3fc", "#86efac", "#fda4af"]
+
             fig = go.Figure()
-            for campo, label in INDICES.items():
+            for (campo, label), cor in zip(INDICES.items(), CORES):
                 serie = df_chart[["mes", campo]].dropna()
                 fig.add_trace(go.Scatter(
                     x=serie["mes"],
                     y=serie[campo],
                     name=label,
                     mode="lines",
-                    line=dict(width=2),
+                    line=dict(width=2.5, color=cor),
                 ))
 
+            BG = "#0e1117"
             fig.update_layout(
-                height=560,
-                margin=dict(t=20, b=20, l=0, r=0),
-                legend=dict(orientation="h", y=-0.08),
-                xaxis=dict(showgrid=False),
+                height=720,
+                margin=dict(t=20, b=20, l=0, r=10),
+                plot_bgcolor=BG,
+                paper_bgcolor=BG,
+                font=dict(color="#ffffff", size=14),
+                legend=dict(
+                    orientation="h", y=-0.06,
+                    font=dict(size=14, color="#ffffff"),
+                ),
+                xaxis=dict(
+                    showgrid=False,
+                    tickfont=dict(size=13, color="#aaaaaa"),
+                    linecolor="#333",
+                ),
                 yaxis=dict(
                     ticksuffix="%",
                     autorange=True,
                     showgrid=True,
-                    gridcolor="#f0f0f0",
+                    gridcolor="#1f2937",
+                    tickfont=dict(size=13, color="#aaaaaa"),
+                    linecolor="#333",
                 ),
-                plot_bgcolor="white",
-                paper_bgcolor="white",
                 hovermode="x unified",
+                hoverlabel=dict(bgcolor="#1f2937", font_color="#ffffff"),
             )
 
             st.plotly_chart(fig, use_container_width=True)
