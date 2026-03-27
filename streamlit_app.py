@@ -134,8 +134,10 @@ elif st.session_state.page == "ativos":
                 else:
                     res = get_supabase().table("ativos_fundos").insert({"cnpj": cnpj, "nome": nome}).execute()
                     if res.data:
-                        st.success(f"{nome} adicionado com sucesso.")
+                        st.success(f"{nome} adicionado.")
                         st.cache_data.clear()
+                        st.info("Para importar o histórico de cotas, rode na sua máquina:")
+                        st.code(f'python extract_fundos.py "{cnpj}"', language="bash")
                     else:
                         st.error(f"Erro: {res}")
 
