@@ -6,10 +6,11 @@ import requests as http
 from supabase import create_client
 
 st.set_page_config(
-    page_title="Enter - Contratos",
-    page_icon="📄",
+    page_title="Enter",
     layout="wide",
 )
+
+# ── Conexões ─────────────────────────────────────────────────────────────────
 
 @st.cache_resource
 def get_supabase():
@@ -33,258 +34,142 @@ def functions_url():
 def auth_header():
     return {"Authorization": f"Bearer {st.secrets['SUPABASE_KEY'].strip()}"}
 
-def fetch_failed_documents():
-    client = get_supabase()
-    try:
-        res = (
-            client.table("documents")
-            .select("id, original_filename, error_message, updated_at")
-            .eq("status", "failed")
-            .order("updated_at", desc=True)
-            .execute()
-        )
-        return res.data or []
-    except Exception as e:
-        st.error(f"Erro ao carregar documentos com falha: {e}")
-        return []
+# ── Navegação ─────────────────────────────────────────────────────────────────
 
-def reanalyze_document(doc_id: str):
-    try:
-        resp = http.post(
-            f"{functions_url()}/extract-pdf",
-            headers={**auth_header(), "Content-Type": "application/json"},
-            json={"document_id": doc_id},
-            timeout=180,
-        )
-        if resp.ok:
-            return True, "Reanálise concluída com sucesso."
-        return False, f"Erro {resp.status_code}: {resp.text[:200]}"
-    except http.exceptions.Timeout:
-        return False, "Timeout: a reanálise demorou mais de 3 minutos."
-    except Exception as e:
-        return False, str(e)
+if "page" not in st.session_state:
+    st.session_state.page = "home"
 
-# Titulo
-st.title("📄 Enter — Painel de Contratos")
+st.title("Análise de portfólio e rendimentos")
 
-# Metricas resumo
-docs     = load_table("documents")
-analyses = load_table("document_analysis")
-clients  = load_table("clients")
-links    = load_table("document_client_links")
+col_home, col_db, col_ativos, *_ = st.columns([1, 1, 1, 6])
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Documentos",  len(docs))
-col2.metric("Analisados",  len(analyses))
-col3.metric("Clientes",    len(clients))
-col4.metric("Vínculos",    len(links))
+if col_home.button("Home", use_container_width=True):
+    st.session_state.page = "home"
+if col_db.button("Banco de dados", use_container_width=True):
+    st.session_state.page = "banco_de_dados"
+if col_ativos.button("Ativos", use_container_width=True):
+    st.session_state.page = "ativos"
 
 st.divider()
 
-# Abas
-tab0, tab1, tab2, tab3, tab4 = st.tabs([
-    "📤 Upload", "📁 Documentos", "🔍 Análises", "🏢 Clientes", "🔗 Vínculos"
-])
+# ── Páginas ───────────────────────────────────────────────────────────────────
 
-# Tab 0 - Upload
-with tab0:
-    st.subheader("Enviar novo contrato")
-    st.caption("O arquivo será enviado ao Supabase e analisado automaticamente pelo Claude.")
+if st.session_state.page == "home":
+    st.subheader("Sobre o projeto")
+    st.markdown("""
+    **Enter** é uma plataforma de análise de portfólio e rendimentos para carteiras de investimento.
 
-    uploaded = st.file_uploader("Selecione um PDF", type=["pdf"], label_visibility="collapsed")
+    O sistema consolida dados de ações, fundos de investimento e renda fixa, cruza com índices de
+    mercado (CDI, IPCA, Selic, IBOVESPA) e produz análises de performance e recomendações.
 
-    if uploaded is not None:
-        st.info(f"Arquivo: **{uploaded.name}** ({uploaded.size / 1024:.0f} KB)")
+    **Fontes de dados**
+    - Ações e FIIs: brapi.dev (preços mensais e dividendos)
+    - Fundos: CVM — Informe Diário (arquivos locais)
+    - Índices: BCB API (CDI, IPCA, Selic) e brapi.dev (IBOVESPA)
 
-        if st.button("Enviar e analisar", type="primary"):
-            with st.spinner("Fazendo upload..."):
-                try:
-                    resp = http.post(
-                        f"{functions_url()}/ingest",
-                        headers=auth_header(),
-                        files={"file": (uploaded.name, uploaded.getvalue(), "application/pdf")},
-                        timeout=30,
-                    )
-                    data = resp.json()
-                except Exception as e:
-                    st.error(f"Erro de conexão: {e}")
-                    data = None
+    **Banco de dados**
+    - `ativos_acoes` / `ativos_fundos` — catálogo de ativos disponíveis
+    - `posicoes_acoes` / `posicoes_fundos` / `posicoes_renda_fixa` — carteira por cliente
+    - `precos_acoes` / `cotas_fundos` / `dados_mercado` — série histórica mensal
+    """)
 
-            if data and resp.status_code == 200:
-                st.success(f"Upload concluído! ID: `{data['id']}`")
-                st.caption("A análise pelo Claude começa automaticamente via Database Webhook. Aguarde alguns instantes e atualize a aba Documentos.")
-                st.cache_data.clear()
-            elif data:
-                st.error(f"Erro no upload: {data.get('error', resp.text)}")
+elif st.session_state.page == "banco_de_dados":
+    st.subheader("Banco de dados")
 
-    st.divider()
-    st.subheader("Reanalisar documento existente")
-    st.caption("Use o ID de um documento com status 'analyzed' ou 'failed' para rodar a análise novamente.")
+    tabelas = [
+        "ativos_acoes",
+        "ativos_fundos",
+        "clientes",
+        "posicoes_acoes",
+        "posicoes_fundos",
+        "posicoes_renda_fixa",
+        "precos_acoes",
+        "cotas_fundos",
+        "dados_mercado",
+    ]
 
-    reanalyze_id = st.text_input("ID do documento", placeholder="uuid do documento")
-    if st.button("Reanalisar", disabled=not reanalyze_id):
-        with st.spinner("Reenviando para análise..."):
-            try:
-                resp = http.post(
-                    f"{functions_url()}/extract-pdf",
-                    headers={**auth_header(), "Content-Type": "application/json"},
-                    json={"document_id": reanalyze_id.strip()},
-                    timeout=180,
-                )
-                data = resp.json()
-            except Exception as e:
-                st.error(f"Erro: {e}")
-                data = None
+    sel = st.selectbox("Tabela", tabelas)
+    df = load_table(sel)
 
-        if data and resp.status_code == 200:
-            st.success(f"Reanálise concluída! Status: `{data.get('status')}`")
-            st.cache_data.clear()
-        elif data:
-            st.error(f"Erro: {data.get('error', resp.text)}")
-
-# Tab 1 - Documentos
-with tab1:
-    st.subheader("Documentos")
-
-    if docs.empty:
-        st.info("Nenhum documento encontrado.")
+    if df.empty:
+        st.info("Tabela vazia.")
     else:
-        statuses = ["Todos"] + sorted(docs["status"].dropna().unique().tolist()) if "status" in docs.columns else ["Todos"]
-        sel = st.selectbox("Filtrar por status", statuses, key="docs_status")
-        df = docs if sel == "Todos" else docs[docs["status"] == sel]
+        st.caption(f"{len(df)} registros")
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
-        cols = [c for c in ["id", "original_filename", "status", "size_bytes", "mime_type", "created_at", "updated_at"] if c in df.columns]
-        st.dataframe(df[cols], use_container_width=True, hide_index=True)
+elif st.session_state.page == "ativos":
+    st.subheader("Adicionar ativo")
+    st.caption("Cadastra um novo ativo no catálogo. Após o cadastro, o ativo estará disponível para posições e coleta de dados.")
 
-        if "status" in docs.columns:
-            st.subheader("Distribuição por status")
-            status_counts = docs["status"].value_counts().reset_index()
-            status_counts.columns = ["status", "qtd"]
-            st.bar_chart(status_counts.set_index("status"))
+    tipo = st.radio("Tipo de ativo", ["Ação / FII", "Fundo", "Renda Fixa"], horizontal=True)
 
-    # Documentos com erro
-    st.divider()
-    col_err_title, col_err_refresh = st.columns([8, 1])
-    col_err_title.subheader("⚠️ Documentos com erro")
-    if col_err_refresh.button("Atualizar", key="refresh_failed"):
-        st.cache_data.clear()
-        st.rerun()
+    with st.form("form_add_ativo"):
+        if tipo == "Ação / FII":
+            ticker = st.text_input("Ticker", placeholder="ex: PETR4").upper().strip()
+            nome   = st.text_input("Nome da empresa", placeholder="ex: Petrobras")
+            submit = st.form_submit_button("Adicionar", type="primary")
 
-    failed_docs = fetch_failed_documents()
+            if submit:
+                if not ticker or not nome:
+                    st.error("Preencha ticker e nome.")
+                else:
+                    res = get_supabase().table("ativos_acoes").insert({"ticker": ticker, "nome": nome}).execute()
+                    if res.data:
+                        st.success(f"{ticker} adicionado com sucesso.")
+                        st.cache_data.clear()
+                    else:
+                        st.error(f"Erro: {res}")
 
-    if not failed_docs:
-        st.success("Nenhum documento com erro.")
-    else:
-        st.caption(f"{len(failed_docs)} documento(s) com status **failed**")
-        for doc in failed_docs:
-            doc_id = doc["id"]
-            filename = doc.get("original_filename") or doc_id
-            error_msg = doc.get("error_message") or "Erro desconhecido"
-            updated = doc.get("updated_at", "")[:19].replace("T", " ") if doc.get("updated_at") else ""
+        elif tipo == "Fundo":
+            cnpj = st.text_input("CNPJ", placeholder="ex: 12.345.678/0001-90").strip()
+            nome = st.text_input("Nome do fundo", placeholder="ex: Riza Lotus Plus")
+            submit = st.form_submit_button("Adicionar", type="primary")
 
-            with st.container(border=True):
-                col_info, col_btn = st.columns([5, 1])
-                with col_info:
-                    st.markdown(f"**{filename}**")
-                    st.caption(f"ID: `{doc_id}`  •  Atualizado: {updated}")
-                    st.error(error_msg, icon="🔴")
-                with col_btn:
-                    st.write("")
-                    if st.button("Reanalisar", key=f"reanalyze_{doc_id}", use_container_width=True):
-                        with st.spinner(f"Reanalysando {filename}..."):
-                            ok, msg = reanalyze_document(doc_id)
-                        if ok:
-                            st.success(msg)
-                            st.cache_data.clear()
-                            st.rerun()
-                        else:
-                            st.error(msg)
+            if submit:
+                if not cnpj or not nome:
+                    st.error("Preencha CNPJ e nome.")
+                else:
+                    res = get_supabase().table("ativos_fundos").insert({"cnpj": cnpj, "nome": nome}).execute()
+                    if res.data:
+                        st.success(f"{nome} adicionado com sucesso.")
+                        st.cache_data.clear()
+                    else:
+                        st.error(f"Erro: {res}")
 
-# Tab 2 - Análises
-with tab2:
-    st.subheader("Análises de documentos")
+        elif tipo == "Renda Fixa":
+            descricao     = st.text_input("Descrição", placeholder="ex: CDB C6")
+            instrumento   = st.selectbox("Instrumento", ["CDB", "LCI", "LCA", "tesouro_direto", "debenture"])
+            indexacao     = st.selectbox("Indexação", ["pos_fixado", "prefixado", "ipca_mais"])
+            taxa          = st.number_input("Taxa contratada", min_value=0.0, format="%.4f")
+            unidade_taxa  = st.selectbox("Unidade da taxa", ["percentual_cdi", "percentual_selic", "percentual_ao_ano", "spread_ao_ano"])
+            valor         = st.number_input("Valor aplicado (R$)", min_value=0.0, format="%.2f")
+            cliente_id    = st.text_input("ID do cliente (uuid)")
+            data_inicio   = st.date_input("Data de início")
+            data_venc     = st.date_input("Data de vencimento")
+            isento_ir     = st.checkbox("Isento de IR")
+            emissor       = st.text_input("Emissor (somente debêntures)", placeholder="opcional")
+            submit        = st.form_submit_button("Adicionar", type="primary")
 
-    if analyses.empty:
-        st.info("Nenhuma análise encontrada.")
-    else:
-        tipos = ["Todos"] + sorted(analyses["instrument_type"].dropna().unique().tolist()) if "instrument_type" in analyses.columns else ["Todos"]
-        sel_tipo = st.selectbox("Filtrar por tipo", tipos, key="analysis_tipo")
-        df_a = analyses if sel_tipo == "Todos" else analyses[analyses["instrument_type"] == sel_tipo]
-
-        priority_cols = [
-            "id", "document_id", "instrument_type", "title_or_heading",
-            "is_signed", "signature_date", "effective_date", "end_date",
-            "contract_value", "payment_terms", "signing_city",
-            "signing_platform", "object_summary", "prompt_version", "model",
-        ]
-        cols_a = [c for c in priority_cols if c in df_a.columns]
-        st.dataframe(df_a[cols_a], use_container_width=True, hide_index=True)
-
-        if "contract_value" in analyses.columns and "instrument_type" in analyses.columns:
-            st.subheader("Valor total por tipo de instrumento (R$)")
-            val = (
-                analyses.dropna(subset=["contract_value"])
-                .groupby("instrument_type")["contract_value"]
-                .sum()
-                .reset_index()
-                .sort_values("contract_value", ascending=False)
-            )
-            if not val.empty:
-                st.bar_chart(val.set_index("instrument_type"))
-
-# Tab 3 - Clientes
-with tab3:
-    st.subheader("Clientes")
-
-    if clients.empty:
-        st.info("Nenhum cliente encontrado.")
-    else:
-        search = st.text_input("Buscar por nome", key="client_search")
-        df_c = clients
-        if search:
-            mask = df_c.apply(lambda col: col.astype(str).str.contains(search, case=False, na=False)).any(axis=1)
-            df_c = df_c[mask]
-
-        priority_cols_c = [
-            "id", "legal_name", "client_type", "cpf_cnpj",
-            "address_city", "address_state", "email", "phone",
-            "representative_name", "created_at",
-        ]
-        cols_c = [c for c in priority_cols_c if c in df_c.columns]
-        st.dataframe(df_c[cols_c], use_container_width=True, hide_index=True)
-
-        col_a, col_b = st.columns(2)
-        if "client_type" in clients.columns:
-            tipo_counts = clients["client_type"].value_counts().reset_index()
-            tipo_counts.columns = ["tipo", "qtd"]
-            col_a.subheader("PF vs PJ")
-            col_a.bar_chart(tipo_counts.set_index("tipo"))
-
-        if "address_state" in clients.columns:
-            state_counts = clients["address_state"].value_counts().head(10).reset_index()
-            state_counts.columns = ["UF", "qtd"]
-            col_b.subheader("Top estados")
-            col_b.bar_chart(state_counts.set_index("UF"))
-
-# Tab 4 - Vínculos
-with tab4:
-    st.subheader("Vínculos documento - cliente")
-
-    if links.empty:
-        st.info("Nenhum vínculo encontrado.")
-    else:
-        if not clients.empty and "id" in clients.columns and "legal_name" in clients.columns:
-            client_map = clients.set_index("id")["legal_name"].to_dict()
-            links_view = links.copy()
-            links_view["client_name"] = links_view["client_id"].map(client_map)
-        else:
-            links_view = links.copy()
-
-        cols_l = [c for c in ["id", "document_id", "client_id", "client_name", "role_in_document", "source", "created_at"] if c in links_view.columns]
-        st.dataframe(links_view[cols_l], use_container_width=True, hide_index=True)
-
-        if "role_in_document" in links.columns:
-            st.subheader("Papéis nos documentos")
-            role_counts = links["role_in_document"].value_counts().reset_index()
-            role_counts.columns = ["papel", "qtd"]
-            st.bar_chart(role_counts.set_index("papel"))
+            if submit:
+                if not descricao or not cliente_id:
+                    st.error("Preencha ao menos descrição e ID do cliente.")
+                else:
+                    payload = {
+                        "cliente_id":     cliente_id.strip(),
+                        "descricao":      descricao,
+                        "instrumento":    instrumento,
+                        "indexacao":      indexacao,
+                        "taxa_contratada": taxa,
+                        "unidade_taxa":   unidade_taxa,
+                        "valor_aplicado": valor,
+                        "data_inicio":    str(data_inicio),
+                        "data_vencimento": str(data_venc),
+                        "isento_ir":      isento_ir,
+                        "emissor":        emissor or None,
+                    }
+                    res = get_supabase().table("posicoes_renda_fixa").insert(payload).execute()
+                    if res.data:
+                        st.success(f"{descricao} adicionado com sucesso.")
+                        st.cache_data.clear()
+                    else:
+                        st.error(f"Erro: {res}")
