@@ -39,7 +39,7 @@ def auth_header():
 if "page" not in st.session_state:
     st.session_state.page = "home"
 
-st.title("Análise de portfólio e rendimentos")
+st.title("Xp - Análise de portfólio e rendimentos")
 
 col_home, col_db, col_ativos, *_ = st.columns([1, 1, 1, 6])
 
