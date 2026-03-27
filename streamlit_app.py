@@ -208,24 +208,37 @@ elif st.session_state.page == "indice_mercado":
     if df.empty:
         st.info("Nenhum dado encontrado. Clique em Atualizar para buscar os índices.")
     else:
-        df = df.sort_values("mes", ascending=False).head(5).reset_index(drop=True)
-
-        COLUNAS = {
+        INDICES = {
             "cdi_mensal":              "CDI",
             "ipca_mensal":             "IPCA",
             "selic_mensal":            "Selic",
             "ibovespa_retorno_mensal": "IBOVESPA",
         }
 
-        for _, row in df.iterrows():
-            mes_label = pd.to_datetime(row["mes"] + "-01").strftime("%B/%Y").capitalize()
+        df_sorted = df.sort_values("mes").reset_index(drop=True)
 
-            with st.container(border=True):
-                st.markdown(f"**{mes_label}**")
-                cols = st.columns(4)
-                for col, (campo, label) in zip(cols, COLUNAS.items()):
-                    val = row.get(campo)
-                    if val is not None:
-                        cols[list(COLUNAS.keys()).index(campo)].metric(label, f"{val:.2f}%")
-                    else:
-                        cols[list(COLUNAS.keys()).index(campo)].metric(label, "—")
+        col_esq, col_dir = st.columns([1, 2])
+
+        # ── Esquerda: valor mais recente de cada índice ──────────────────────
+        with col_esq:
+            ultimo = df_sorted.iloc[-1]
+            mes_label = pd.to_datetime(ultimo["mes"] + "-01").strftime("%b/%Y")
+            st.caption(f"Último mês disponível: **{mes_label}**")
+
+            tabela = {
+                "Índice": list(INDICES.values()),
+                "Valor (% mês)": [
+                    f"{ultimo[campo]:.2f}%" if pd.notna(ultimo.get(campo)) else "—"
+                    for campo in INDICES
+                ],
+            }
+            st.dataframe(pd.DataFrame(tabela), use_container_width=True, hide_index=True)
+
+        # ── Direita: gráfico histórico 5 anos ────────────────────────────────
+        with col_dir:
+            df_chart = df_sorted[["mes"] + list(INDICES.keys())].copy()
+            df_chart["mes"] = pd.to_datetime(df_chart["mes"] + "-01")
+            df_chart = df_chart.set_index("mes")
+            df_chart.columns = list(INDICES.values())
+            df_chart = df_chart.dropna(how="all")
+            st.line_chart(df_chart, use_container_width=True)
