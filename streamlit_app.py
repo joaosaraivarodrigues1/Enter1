@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import requests as http
+import plotly.graph_objects as go
 
 from supabase import create_client
 
@@ -225,20 +226,49 @@ elif st.session_state.page == "indice_mercado":
             mes_label = pd.to_datetime(ultimo["mes"] + "-01").strftime("%b/%Y")
             st.caption(f"Último mês disponível: **{mes_label}**")
 
-            tabela = {
-                "Índice": list(INDICES.values()),
-                "Valor (% mês)": [
-                    f"{ultimo[campo]:.2f}%" if pd.notna(ultimo.get(campo)) else "—"
-                    for campo in INDICES
-                ],
-            }
-            st.dataframe(pd.DataFrame(tabela), use_container_width=True, hide_index=True)
+            for campo, label in INDICES.items():
+                val = ultimo.get(campo)
+                texto = f"{val:.2f}%" if pd.notna(val) else "—"
+                st.markdown(
+                    f"""
+                    <div style="padding:18px 0 10px 0; border-bottom:1px solid #e0e0e0;">
+                        <div style="font-size:15px; color:#888;">{label}</div>
+                        <div style="font-size:42px; font-weight:700; line-height:1.1;">{texto}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
         # ── Direita: gráfico histórico 5 anos ────────────────────────────────
         with col_dir:
             df_chart = df_sorted[["mes"] + list(INDICES.keys())].copy()
             df_chart["mes"] = pd.to_datetime(df_chart["mes"] + "-01")
-            df_chart = df_chart.set_index("mes")
-            df_chart.columns = list(INDICES.values())
-            df_chart = df_chart.dropna(how="all")
-            st.line_chart(df_chart, use_container_width=True)
+
+            fig = go.Figure()
+            for campo, label in INDICES.items():
+                serie = df_chart[["mes", campo]].dropna()
+                fig.add_trace(go.Scatter(
+                    x=serie["mes"],
+                    y=serie[campo],
+                    name=label,
+                    mode="lines",
+                    line=dict(width=2),
+                ))
+
+            fig.update_layout(
+                height=560,
+                margin=dict(t=20, b=20, l=0, r=0),
+                legend=dict(orientation="h", y=-0.08),
+                xaxis=dict(showgrid=False),
+                yaxis=dict(
+                    ticksuffix="%",
+                    autorange=True,
+                    showgrid=True,
+                    gridcolor="#f0f0f0",
+                ),
+                plot_bgcolor="white",
+                paper_bgcolor="white",
+                hovermode="x unified",
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
