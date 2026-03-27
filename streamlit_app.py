@@ -41,7 +41,7 @@ if "page" not in st.session_state:
 
 st.title("Xp - Análise de portfólio e rendimentos")
 
-col_home, col_db, col_ativos, *_ = st.columns([1, 1, 1, 6])
+col_home, col_db, col_ativos, col_indices, *_ = st.columns([1, 1, 1, 1, 5])
 
 if col_home.button("Home", use_container_width=True):
     st.session_state.page = "home"
@@ -49,6 +49,8 @@ if col_db.button("Banco de dados", use_container_width=True):
     st.session_state.page = "banco_de_dados"
 if col_ativos.button("Ativos", use_container_width=True):
     st.session_state.page = "ativos"
+if col_indices.button("Índice Mercado", use_container_width=True):
+    st.session_state.page = "indice_mercado"
 
 st.divider()
 
@@ -173,3 +175,57 @@ elif st.session_state.page == "ativos":
                         st.cache_data.clear()
                     else:
                         st.error(f"Erro: {res}")
+
+elif st.session_state.page == "indice_mercado":
+    col_title, col_btn = st.columns([5, 1])
+    col_title.subheader("Índices de mercado")
+
+    with col_btn:
+        st.write("")
+        if st.button("Atualizar", type="primary", use_container_width=True):
+            with st.spinner("Buscando índices..."):
+                try:
+                    resp = http.post(
+                        f"{functions_url()}/fetch-indices",
+                        headers={**auth_header(), "Content-Type": "application/json"},
+                        json={},
+                        timeout=60,
+                    )
+                    data = resp.json()
+                except Exception as e:
+                    st.error(f"Erro de conexão: {e}")
+                    data = None
+
+            if data and resp.status_code == 200:
+                st.success(f"{data.get('meses_inseridos', 0)} meses atualizados.")
+                st.cache_data.clear()
+                st.rerun()
+            elif data:
+                st.error(f"Erro: {data.get('error', resp.text)}")
+
+    df = load_table("dados_mercado")
+
+    if df.empty:
+        st.info("Nenhum dado encontrado. Clique em Atualizar para buscar os índices.")
+    else:
+        df = df.sort_values("mes", ascending=False).head(5).reset_index(drop=True)
+
+        COLUNAS = {
+            "cdi_mensal":              "CDI",
+            "ipca_mensal":             "IPCA",
+            "selic_mensal":            "Selic",
+            "ibovespa_retorno_mensal": "IBOVESPA",
+        }
+
+        for _, row in df.iterrows():
+            mes_label = pd.to_datetime(row["mes"] + "-01").strftime("%B/%Y").capitalize()
+
+            with st.container(border=True):
+                st.markdown(f"**{mes_label}**")
+                cols = st.columns(4)
+                for col, (campo, label) in zip(cols, COLUNAS.items()):
+                    val = row.get(campo)
+                    if val is not None:
+                        cols[list(COLUNAS.keys()).index(campo)].metric(label, f"{val:.2f}%")
+                    else:
+                        cols[list(COLUNAS.keys()).index(campo)].metric(label, "—")
