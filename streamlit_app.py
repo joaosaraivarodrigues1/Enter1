@@ -5,6 +5,7 @@ import requests as http
 import plotly.graph_objects as go
 
 from supabase import create_client
+from postgrest.exceptions import APIError
 
 st.set_page_config(
     page_title="Enter",
@@ -116,12 +117,49 @@ elif st.session_state.page == "ativos":
                 if not ticker or not nome:
                     st.error("Preencha ticker e nome.")
                 else:
-                    res = get_supabase().table("ativos_acoes").insert({"ticker": ticker, "nome": nome}).execute()
-                    if res.data:
-                        st.success(f"{ticker} adicionado com sucesso.")
-                        st.cache_data.clear()
-                    else:
-                        st.error(f"Erro: {res}")
+                    # Etapa 1: inserir no catálogo
+                    try:
+                        get_supabase().table("ativos_acoes").insert({"ticker": ticker, "nome": nome}).execute()
+                    except APIError as e:
+                        if "23505" in str(e):
+                            st.error(f"O ticker **{ticker}** já está cadastrado no banco de dados.")
+                        else:
+                            st.error(f"Erro ao cadastrar ativo: {e}")
+                        st.stop()
+
+                    st.cache_data.clear()
+
+                    # Etapa 2: progresso + busca de preços históricos
+                    with st.status("Adicionando ativo...", expanded=True) as s:
+                        st.write("✅ Ativo registrado no banco de dados")
+                        st.write("✅ Ativo registrado no portfólio")
+
+                        bar = st.progress(0, text="Importando preços históricos...")
+
+                        try:
+                            bar.progress(15, text="Conectando ao Yahoo Finance...")
+                            resp = http.post(
+                                f"{functions_url()}/fetch-acoes",
+                                headers={**auth_header(), "Content-Type": "application/json"},
+                                json={"ticker": ticker},
+                                timeout=120,
+                            )
+                            bar.progress(85, text="Salvando no banco de dados...")
+                            data = resp.json()
+                            bar.progress(100, text="Concluído!")
+
+                            if resp.status_code == 200:
+                                meses = data.get("meses_inseridos", 0)
+                                st.write(f"✅ {meses} meses de histórico importados")
+                                s.update(label=f"{ticker} adicionado com sucesso!", state="complete")
+                            else:
+                                err_msg = data.get("error", resp.text)
+                                st.write(f"⚠️ Preços não importados: {err_msg}")
+                                s.update(label=f"{ticker} cadastrado (preços pendentes)", state="error")
+                        except Exception as e:
+                            bar.progress(100, text="Falhou")
+                            st.write(f"⚠️ Erro de conexão ao importar preços: {e}")
+                            s.update(label=f"{ticker} cadastrado (preços pendentes)", state="error")
 
         elif tipo == "Fundo":
             cnpj = st.text_input("CNPJ", placeholder="ex: 12.345.678/0001-90").strip()
