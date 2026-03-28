@@ -80,13 +80,16 @@ if st.session_state.page == "home":
 elif st.session_state.page == "clientes":
     st.subheader("Clientes")
 
-    tab_carteira, tab_resultados = st.tabs(["Carteira", "Resultados"])
+    clientes = ["Albert", "Beatriz", "Carlos", "Diana", "Eduardo", "Fernanda", "Gustavo", "Helena"]
+    tabs_clientes = st.tabs(clientes)
 
-    with tab_carteira:
-        st.info("Em construção.")
-
-    with tab_resultados:
-        st.info("Em construção.")
+    for tab, nome_cliente in zip(tabs_clientes, clientes):
+        with tab:
+            sub_carteira, sub_resultados = st.tabs(["Carteira", "Resultados"])
+            with sub_carteira:
+                st.info("Em construção.")
+            with sub_resultados:
+                st.info("Em construção.")
 
 elif st.session_state.page == "ativos":
     st.subheader("Ativos Disponíveis")
