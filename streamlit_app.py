@@ -297,20 +297,42 @@ elif st.session_state.page == "clientes":
                         if st.button("＋ Adicionar ação", key=f"btn_add_a_{cliente_id}"):
                             st.session_state[add_a] = True; st.rerun()
                     else:
-                        ac = st.columns(COLS_A)
-                        with ac[0]: tk_v  = st.text_input("Ticker", key=f"na_tk_{cliente_id}",  label_visibility="collapsed", placeholder="PETR4").upper().strip()
-                        with ac[2]: qtd_v = st.number_input("Qtd",   key=f"na_qtd_{cliente_id}", label_visibility="collapsed", min_value=0.0, step=1.0,   format="%.0f")
-                        with ac[3]: pm_v  = st.number_input("Médio", key=f"na_pm_{cliente_id}",  label_visibility="collapsed", min_value=0.0, step=0.01, format="%.2f")
-                        with ac[8]: dt_v  = st.date_input("Data",   key=f"na_dt_{cliente_id}",  label_visibility="collapsed")
-                        all_a = bool(tk_v) and qtd_v > 0 and pm_v > 0
-                        with ac[9]:
-                            if st.button("Salvar", key=f"save_a_{cliente_id}", type="primary", disabled=not all_a):
-                                get_supabase().table("posicoes_acoes").insert({
-                                    "cliente_id": cliente_id, "ticker": tk_v,
-                                    "quantidade": qtd_v, "preco_medio_compra": pm_v,
-                                    "data_compra": str(dt_v),
-                                }).execute()
-                                st.session_state[add_a] = False; st.cache_data.clear(); st.rerun()
+                        if df_ativos_acoes.empty:
+                            st.warning("Nenhuma ação cadastrada em Ativos Disponíveis.")
+                        else:
+                            opcoes_a = {row["ticker"]: f"{row['ticker']} — {row.get('nome', row['ticker'])}"
+                                        for _, row in df_ativos_acoes.iterrows()}
+                            ac = st.columns(COLS_A)
+                            with ac[0]:
+                                tk_sel = st.selectbox("Ativo", options=list(opcoes_a.keys()),
+                                    format_func=lambda x: opcoes_a[x],
+                                    key=f"na_tk_{cliente_id}", label_visibility="collapsed")
+                            with ac[2]:
+                                qtd_str = st.text_input("Qtd", key=f"na_qtd_{cliente_id}",
+                                    label_visibility="collapsed", placeholder="ex: 100")
+                            try:
+                                qtd_v = float(qtd_str.replace(",", ".")) if qtd_str.strip() else 0.0
+                            except ValueError:
+                                qtd_v = 0.0
+                            pa_r = df_precos[(df_precos["ticker"] == tk_sel) & (df_precos["mes"] == mes_atual)] if mes_atual and tk_sel else pd.DataFrame()
+                            preco_at = float(pa_r.iloc[0]["preco_fechamento"]) if not pa_r.empty else None
+                            with ac[5]:
+                                if preco_at is not None:
+                                    st.write(f"R$ {preco_at:,.2f}")
+                                else:
+                                    st.caption("sem preço no mês")
+                            if preco_at and qtd_v > 0:
+                                ac[6].write(f"R$ {preco_at * qtd_v:,.0f}")
+                            all_a = bool(tk_sel) and qtd_v > 0 and preco_at is not None
+                            with ac[9]:
+                                if st.button("Salvar", key=f"save_a_{cliente_id}", type="primary", disabled=not all_a):
+                                    data_compra = (mes_atual + "-01") if mes_atual else pd.Timestamp.today().strftime("%Y-%m-%d")
+                                    get_supabase().table("posicoes_acoes").insert({
+                                        "cliente_id": cliente_id, "ticker": tk_sel,
+                                        "quantidade": qtd_v, "preco_medio_compra": preco_at,
+                                        "data_compra": data_compra,
+                                    }).execute()
+                                    st.session_state[add_a] = False; st.cache_data.clear(); st.rerun()
                         if st.button("✕ Cancelar", key=f"cancel_a_{cliente_id}"):
                             st.session_state[add_a] = False; st.rerun()
 
@@ -371,16 +393,31 @@ elif st.session_state.page == "clientes":
                                 cnpj_sel = st.selectbox("Fundo", options=list(opcoes_f.keys()),
                                     format_func=lambda x: opcoes_f[x],
                                     key=f"nf_cnpj_{cliente_id}", label_visibility="collapsed")
-                            with fc[2]: cotas_v  = st.number_input("Cotas",  key=f"nf_cotas_{cliente_id}",  label_visibility="collapsed", min_value=0.0, step=1.0,   format="%.0f")
-                            with fc[3]: vaplic_v = st.number_input("V.Aplic", key=f"nf_vaplic_{cliente_id}", label_visibility="collapsed", min_value=0.0, step=100.0, format="%.2f")
-                            with fc[7]: dt_fv    = st.date_input("Data",     key=f"nf_dt_{cliente_id}",     label_visibility="collapsed")
-                            all_f = cotas_v > 0 and vaplic_v > 0
+                            with fc[2]:
+                                cotas_str = st.text_input("Cotas", key=f"nf_cotas_{cliente_id}",
+                                    label_visibility="collapsed", placeholder="ex: 1000")
+                            try:
+                                cotas_v = float(cotas_str.replace(",", ".")) if cotas_str.strip() else 0.0
+                            except ValueError:
+                                cotas_v = 0.0
+                            ca_r = df_cotas[(df_cotas["cnpj"] == cnpj_sel) & (df_cotas["mes"] == mes_atual)] if mes_atual and cnpj_sel else pd.DataFrame()
+                            cota_at = float(ca_r.iloc[0]["cota_fechamento"]) if not ca_r.empty else None
+                            with fc[4]:
+                                if cota_at is not None:
+                                    st.write(f"R$ {cota_at:,.4f}")
+                                else:
+                                    st.caption("sem cota no mês")
+                            vaplic_calc = cotas_v * cota_at if (cota_at and cotas_v > 0) else None
+                            if vaplic_calc:
+                                fc[3].write(f"R$ {vaplic_calc:,.0f}")
+                            all_f = cotas_v > 0 and cota_at is not None
                             with fc[8]:
                                 if st.button("Salvar", key=f"save_f_{cliente_id}", type="primary", disabled=not all_f):
+                                    data_inv = (mes_atual + "-01") if mes_atual else pd.Timestamp.today().strftime("%Y-%m-%d")
                                     get_supabase().table("posicoes_fundos").insert({
                                         "cliente_id": cliente_id, "cnpj": cnpj_sel,
-                                        "numero_cotas": cotas_v, "valor_aplicado": vaplic_v,
-                                        "data_investimento": str(dt_fv),
+                                        "numero_cotas": cotas_v, "valor_aplicado": vaplic_calc,
+                                        "data_investimento": data_inv,
                                     }).execute()
                                     st.session_state[add_f] = False; st.cache_data.clear(); st.rerun()
                         if st.button("✕ Cancelar", key=f"cancel_f_{cliente_id}"):
@@ -435,11 +472,23 @@ elif st.session_state.page == "clientes":
                                 ativo_sel = st.selectbox("Instrumento", options=list(opcoes_r.keys()),
                                     format_func=lambda x: opcoes_r[x],
                                     key=f"nr_ativo_{cliente_id}", label_visibility="collapsed")
-                            with rc2[2]: taxa_v   = st.number_input("Taxa",   key=f"nr_taxa_{cliente_id}",   label_visibility="collapsed", min_value=0.0, step=0.1,   format="%.2f")
-                            with rc2[3]: unid_v   = st.selectbox("Unidade", ["% CDI", "% Selic", "% a.a."], key=f"nr_unid_{cliente_id}",   label_visibility="collapsed")
-                            with rc2[4]: vaplic_r = st.number_input("V.Aplic", key=f"nr_vaplic_{cliente_id}", label_visibility="collapsed", min_value=0.0, step=100.0, format="%.2f")
-                            with rc2[5]: dt_ini_v  = st.date_input("Início",  key=f"nr_ini_{cliente_id}",    label_visibility="collapsed")
-                            with rc2[6]: dt_venc_v = st.date_input("Venc.",   key=f"nr_venc_{cliente_id}",   label_visibility="collapsed")
+                            with rc2[2]:
+                                taxa_str = st.text_input("Taxa", key=f"nr_taxa_{cliente_id}",
+                                    label_visibility="collapsed", placeholder="ex: 110")
+                            try:
+                                taxa_v = float(taxa_str.replace(",", ".")) if taxa_str.strip() else 0.0
+                            except ValueError:
+                                taxa_v = 0.0
+                            with rc2[3]: unid_v = st.selectbox("Unidade", ["% CDI", "% Selic", "% a.a."], key=f"nr_unid_{cliente_id}", label_visibility="collapsed")
+                            with rc2[4]:
+                                vaplic_str = st.text_input("V.Aplic", key=f"nr_vaplic_{cliente_id}",
+                                    label_visibility="collapsed", placeholder="ex: 10000")
+                            try:
+                                vaplic_r = float(vaplic_str.replace(",", ".")) if vaplic_str.strip() else 0.0
+                            except ValueError:
+                                vaplic_r = 0.0
+                            with rc2[5]: dt_ini_v  = st.date_input("Início", key=f"nr_ini_{cliente_id}",  label_visibility="collapsed")
+                            with rc2[6]: dt_venc_v = st.date_input("Venc.",  key=f"nr_venc_{cliente_id}", label_visibility="collapsed")
                             all_r = taxa_v > 0 and vaplic_r > 0
                             with rc2[7]:
                                 if st.button("Salvar", key=f"save_r_{cliente_id}", type="primary", disabled=not all_r):
