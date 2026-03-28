@@ -40,10 +40,43 @@ def auth_header():
 
 if "page" not in st.session_state:
     st.session_state.page = "home"
+if "mes_selecionado" not in st.session_state:
+    st.session_state.mes_selecionado = None
+
+@st.dialog("Período de referência")
+def modal_selecionar_data():
+    df_p = load_table("precos_acoes")
+    df_c = load_table("cotas_fundos")
+    df_m = load_table("dados_mercado")
+
+    meses = set()
+    if not df_p.empty: meses.update(df_p["mes"].dropna().unique())
+    if not df_c.empty: meses.update(df_c["mes"].dropna().unique())
+    if not df_m.empty: meses.update(df_m["mes"].dropna().unique())
+
+    meses_sorted = sorted(meses)
+    if not meses_sorted:
+        st.info("Nenhum dado histórico encontrado.")
+        return
+
+    atual = st.session_state.mes_selecionado
+    idx = meses_sorted.index(atual) if atual in meses_sorted else len(meses_sorted) - 1
+
+    mes_escolhido = st.selectbox(
+        "Mês de referência",
+        options=meses_sorted,
+        index=idx,
+        format_func=lambda m: pd.to_datetime(m + "-01").strftime("%b/%Y"),
+    )
+    st.caption(f"{len(meses_sorted)} meses disponíveis · {meses_sorted[0]} → {meses_sorted[-1]}")
+
+    if st.button("Confirmar", type="primary", use_container_width=True):
+        st.session_state.mes_selecionado = mes_escolhido
+        st.rerun()
 
 st.title("Xp - Análise de portfólio e rendimentos")
 
-col_home, col_clientes, col_ativos, col_indices, *_ = st.columns([1, 1, 1, 1, 5])
+col_home, col_clientes, col_ativos, col_indices, col_data, *_ = st.columns([1, 1, 1, 1, 1, 3])
 
 if col_home.button("Home", use_container_width=True):
     st.session_state.page = "home"
@@ -53,6 +86,11 @@ if col_ativos.button("Ativos Disponíveis", use_container_width=True):
     st.session_state.page = "ativos"
 if col_indices.button("Índice Mercado", use_container_width=True):
     st.session_state.page = "indice_mercado"
+
+_mes_sel = st.session_state.mes_selecionado
+_data_label = pd.to_datetime(_mes_sel + "-01").strftime("%b/%Y") if _mes_sel else "Data"
+if col_data.button(_data_label, use_container_width=True):
+    modal_selecionar_data()
 
 st.divider()
 
@@ -95,10 +133,16 @@ elif st.session_state.page == "clientes":
     nomes = df_clientes["nome"].tolist() if not df_clientes.empty else []
     ids   = df_clientes["id"].tolist()   if not df_clientes.empty else []
 
-    # Último e penúltimo mês disponíveis
+    # Mês de referência — usa seleção do usuário ou último disponível
     meses_ord = sorted(df_mercado["mes"].unique()) if not df_mercado.empty else []
-    mes_atual = meses_ord[-1] if len(meses_ord) >= 1 else None
-    mes_ant   = meses_ord[-2] if len(meses_ord) >= 2 else None
+    mes_sel   = st.session_state.mes_selecionado
+    if mes_sel and mes_sel in meses_ord:
+        mes_atual = mes_sel
+        idx_sel   = meses_ord.index(mes_sel)
+        mes_ant   = meses_ord[idx_sel - 1] if idx_sel > 0 else None
+    else:
+        mes_atual = meses_ord[-1] if len(meses_ord) >= 1 else None
+        mes_ant   = meses_ord[-2] if len(meses_ord) >= 2 else None
     row_merc  = df_mercado[df_mercado["mes"] == mes_atual].iloc[0] if mes_atual else None
 
     tabs_clientes = st.tabs(nomes + ["＋"])
