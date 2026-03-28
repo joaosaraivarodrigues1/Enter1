@@ -121,7 +121,7 @@ elif st.session_state.page == "ativos":
     st.divider()
 
     # ── Layout: tabelas + formulário ──────────────────────────────────────────
-    col_tabs, col_form = st.columns([13, 7])
+    col_form, col_tabs = st.columns([4, 16])
 
     with col_tabs:
         max_meses_a = df_precos["mes"].nunique() if not df_precos.empty else 1
