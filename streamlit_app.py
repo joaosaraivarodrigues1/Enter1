@@ -176,50 +176,91 @@ elif st.session_state.page == "clientes":
             if st.session_state[key] == "dados":
                 row_cli = df_clientes[df_clientes["id"] == cliente_id].iloc[0]
                 perfil_texto = row_cli.get("perfil_de_risco", "") or ""
+                nome_cli = row_cli.get("nome", "—")
+
+                CORES_PERFIL = {
+                    "Conservador": ("#22c55e", "#052e16"),
+                    "Moderado":    ("#3b82f6", "#0c1a3a"),
+                    "Arrojado":    ("#f97316", "#3a1a00"),
+                    "Agressivo":   ("#ef4444", "#3a0c0c"),
+                }
 
                 if perfil_texto:
-                    # Extrai a linha de classificação para o badge
                     linhas = perfil_texto.splitlines()
                     classificacao = next(
                         (l.replace("Classificação do Perfil de Investimento:", "").strip()
-                         for l in linhas if "Classificação" in l),
-                        "—"
+                         for l in linhas if "Classificação" in l), "—"
                     )
-                    CORES_PERFIL = {
-                        "Conservador": "#22c55e",
-                        "Moderado":    "#3b82f6",
-                        "Arrojado":    "#f97316",
-                        "Agressivo":   "#ef4444",
-                    }
-                    cor = CORES_PERFIL.get(classificacao, "#6b7280")
-                    st.markdown(
-                        f'<span style="background:{cor};color:#fff;padding:4px 14px;'
-                        f'border-radius:20px;font-size:14px;font-weight:600;">'
-                        f'{classificacao}</span>',
-                        unsafe_allow_html=True,
-                    )
+                    cor_badge, cor_bg = CORES_PERFIL.get(classificacao, ("#6b7280", "#1a1f2e"))
+
+                    # ── Cabeçalho ──────────────────────────────────────────────
+                    _, card_col, _ = st.columns([0.5, 9, 0.5])
+                    with card_col:
+                        st.markdown(f"""
+<div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09);
+border-radius:20px;padding:44px 52px 36px 52px;text-align:center;margin-bottom:8px;">
+  <h1 style="font-size:3rem;font-weight:700;margin:0 0 18px 0;
+  letter-spacing:-1px;line-height:1.1;">{nome_cli}</h1>
+  <span style="background:{cor_badge};color:#fff;padding:6px 22px;border-radius:24px;
+  font-size:1rem;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">
+  {classificacao}</span>
+  <p style="font-size:1.2rem;color:#9ca3af;margin:22px 0 0 0;font-weight:400;
+  letter-spacing:0.1px;">Perfil de Investimento · XP Assessoria</p>
+</div>""", unsafe_allow_html=True)
+
                     st.write("")
-                    # Renderiza o texto seção a seção
-                    secao_atual = []
-                    for linha in linhas[2:]:  # pula nome e classificação
-                        if linha.strip().startswith(("1.", "2.", "3.")):
-                            if secao_atual:
-                                st.markdown(" ".join(secao_atual))
-                                secao_atual = []
-                            st.markdown(f"**{linha.strip()}**")
-                        elif linha.strip().startswith(("a.", "b.", "c.", "d.")):
-                            if secao_atual:
-                                st.markdown(" ".join(secao_atual))
-                                secao_atual = []
-                            st.markdown(f"*{linha.strip()}*")
-                        elif linha.strip():
-                            secao_atual.append(linha.strip())
+
+                    # ── Corpo do perfil ────────────────────────────────────────
+                    # Parseia seções numeradas e sub-itens
+                    secoes = []   # lista de (titulo, [(sub_titulo, texto)])
+                    sec_titulo = None; sub_titulo = None; buf = []
+
+                    for linha in linhas[2:]:
+                        l = linha.strip()
+                        if not l:
+                            if buf and sub_titulo is not None:
+                                if secoes: secoes[-1][1].append((sub_titulo, " ".join(buf)))
+                                sub_titulo = None; buf = []
+                            elif buf and sec_titulo:
+                                if secoes: secoes[-1][1].append((None, " ".join(buf)))
+                                buf = []
+                            continue
+                        if l[0].isdigit() and l[1] == ".":
+                            if buf and secoes:
+                                secoes[-1][1].append((sub_titulo, " ".join(buf)))
+                                buf = []; sub_titulo = None
+                            sec_titulo = l[2:].strip() if len(l) > 2 else l
+                            secoes.append((sec_titulo, []))
+                        elif len(l) >= 2 and l[0].isalpha() and l[1] == "." and l[0].islower():
+                            if buf and secoes:
+                                secoes[-1][1].append((sub_titulo, " ".join(buf)))
+                                buf = []
+                            sub_titulo = l[2:].strip() if len(l) > 2 else l
                         else:
-                            if secao_atual:
-                                st.markdown(" ".join(secao_atual))
-                                secao_atual = []
-                    if secao_atual:
-                        st.markdown(" ".join(secao_atual))
+                            buf.append(l)
+                    if buf and secoes:
+                        secoes[-1][1].append((sub_titulo, " ".join(buf)))
+
+                    _, body_col, _ = st.columns([0.5, 9, 0.5])
+                    with body_col:
+                        for sec_t, items in secoes:
+                            st.markdown(f"""
+<div style="margin-bottom:28px;">
+  <p style="font-size:1.05rem;font-weight:700;color:{cor_badge};
+  text-transform:uppercase;letter-spacing:0.8px;margin:0 0 12px 0;
+  border-left:3px solid {cor_badge};padding-left:10px;">{sec_t}</p>""",
+                                unsafe_allow_html=True)
+                            for sub_t, texto in items:
+                                if sub_t:
+                                    st.markdown(f"""
+  <p style="font-size:1rem;font-weight:600;color:#e5e7eb;margin:14px 0 4px 0;">{sub_t}</p>
+  <p style="font-size:0.95rem;color:#9ca3af;line-height:1.7;margin:0;">{texto}</p>""",
+                                        unsafe_allow_html=True)
+                                else:
+                                    st.markdown(f"""
+  <p style="font-size:0.95rem;color:#9ca3af;line-height:1.7;margin:0;">{texto}</p>""",
+                                        unsafe_allow_html=True)
+                            st.markdown("</div>", unsafe_allow_html=True)
                 else:
                     st.info("Perfil de risco não cadastrado para este cliente.")
 
