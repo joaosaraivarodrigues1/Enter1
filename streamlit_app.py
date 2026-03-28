@@ -225,61 +225,234 @@ elif st.session_state.page == "clientes":
 
             # ── Carteira ──────────────────────────────────────────────────────
             elif st.session_state[key] == "carteira":
-                rows = []
+                # Totais por categoria
+                total_acoes_c = 0.0
                 for _, p in acoes_c.iterrows():
-                    nome_at = "—"
-                    if not df_ativos_acoes.empty:
-                        m = df_ativos_acoes[df_ativos_acoes["ticker"] == p["ticker"]]
-                        if not m.empty:
-                            nome_at = m.iloc[0]["nome"]
-                    rows.append({
-                        "Tipo":            "Ação / FII",
-                        "Ativo":           f"{p['ticker']} — {nome_at}",
-                        "Qtd / Cotas":     float(p["quantidade"]),
-                        "Preço médio":     float(p["preco_medio_compra"]),
-                        "Valor investido": float(p["quantidade"]) * float(p["preco_medio_compra"]),
-                        "Data entrada":    p["data_compra"],
-                    })
-                for _, p in fundos_c.iterrows():
-                    nome_fundo = "—"
-                    if not df_ativos_fundos.empty:
-                        m = df_ativos_fundos[df_ativos_fundos["cnpj"] == p["cnpj"]]
-                        if not m.empty:
-                            nome_fundo = m.iloc[0]["nome"]
-                    rows.append({
-                        "Tipo":            "Fundo",
-                        "Ativo":           nome_fundo,
-                        "Qtd / Cotas":     float(p["numero_cotas"]),
-                        "Preço médio":     None,
-                        "Valor investido": float(p["valor_aplicado"]),
-                        "Data entrada":    p["data_investimento"],
-                    })
-                for _, p in rf_c.iterrows():
-                    nome_rf = "—"
-                    if not df_ativos_rf.empty:
-                        m = df_ativos_rf[df_ativos_rf["id"] == p["ativo_id"]]
-                        if not m.empty:
-                            nome_rf = m.iloc[0]["nome"]
-                    rows.append({
-                        "Tipo":            "Renda Fixa",
-                        "Ativo":           nome_rf,
-                        "Qtd / Cotas":     None,
-                        "Preço médio":     None,
-                        "Valor investido": float(p["valor_aplicado"]),
-                        "Data entrada":    p["data_inicio"],
-                    })
+                    pa_r = df_precos[(df_precos["ticker"] == p["ticker"]) & (df_precos["mes"] == mes_atual)] if mes_atual else pd.DataFrame()
+                    total_acoes_c += float(pa_r.iloc[0]["preco_fechamento"]) * float(p["quantidade"]) if not pa_r.empty else float(p["quantidade"]) * float(p["preco_medio_compra"])
 
-                if rows:
-                    st.dataframe(
-                        pd.DataFrame(rows),
-                        use_container_width=True, hide_index=True,
-                        column_config={
-                            "Preço médio":     st.column_config.NumberColumn(format="R$ %.2f"),
-                            "Valor investido": st.column_config.NumberColumn(format="R$ %.2f"),
-                        },
-                    )
-                else:
-                    st.info("Nenhuma posição cadastrada para este cliente.")
+                total_fundos_c = 0.0
+                for _, p in fundos_c.iterrows():
+                    ca_r = df_cotas[(df_cotas["cnpj"] == p["cnpj"]) & (df_cotas["mes"] == mes_atual)] if mes_atual else pd.DataFrame()
+                    total_fundos_c += float(ca_r.iloc[0]["cota_fechamento"]) * float(p["numero_cotas"]) if not ca_r.empty else float(p["valor_aplicado"])
+
+                total_rf_c = rf_c["valor_aplicado"].astype(float).sum() if not rf_c.empty else 0.0
+                total_g = total_acoes_c + total_fundos_c + total_rf_c or 1.0
+
+                def _pct(v): return v / total_g * 100
+
+                COLS_A = [0.9, 1.8, 0.8, 1.1, 1.1, 1.1, 1.1, 0.8, 1.1, 0.5]
+                HDRS_A = ["Ticker", "Nome", "Qtd", "P. Médio", "V. Invest.", "P. Atual", "V. Atual", "Var %", "Data compra", ""]
+                COLS_F = [2.2, 1.8, 0.9, 1.1, 1.1, 1.1, 0.8, 1.1, 0.5]
+                HDRS_F = ["Fundo", "CNPJ", "Cotas", "V. Aplicado", "Cota Atual", "V. Atual", "Var %", "Data invest.", ""]
+                COLS_R = [2.2, 1.3, 0.8, 0.9, 1.1, 1.1, 1.1, 0.5]
+                HDRS_R = ["Instrumento", "Indexação", "Taxa", "Unidade", "V. Aplicado", "Início", "Vencimento", ""]
+
+                # ── Ações ──────────────────────────────────────────────────────
+                n_a = len(acoes_c)
+                with st.expander(
+                    f"Ações   ·   R$ {total_acoes_c:,.0f}   ·   {_pct(total_acoes_c):.1f}%   ·   {n_a} posição{'ões' if n_a != 1 else ''}",
+                    expanded=False,
+                ):
+                    hc = st.columns(COLS_A)
+                    for c, h in zip(hc, HDRS_A):
+                        c.markdown(f"**{h}**")
+                    st.divider()
+
+                    for _, p in acoes_c.iterrows():
+                        qtd = float(p["quantidade"]); pm = float(p["preco_medio_compra"]); vi = qtd * pm
+                        nome_at = "—"
+                        if not df_ativos_acoes.empty:
+                            m = df_ativos_acoes[df_ativos_acoes["ticker"] == p["ticker"]]
+                            if not m.empty: nome_at = m.iloc[0]["nome"]
+                        pa_r = df_precos[(df_precos["ticker"] == p["ticker"]) & (df_precos["mes"] == mes_atual)] if mes_atual else pd.DataFrame()
+                        pa  = float(pa_r.iloc[0]["preco_fechamento"]) if not pa_r.empty else None
+                        va  = pa * qtd if pa else None
+                        var = (pa - pm) / pm * 100 if pa else None
+
+                        rc = st.columns(COLS_A)
+                        rc[0].write(p["ticker"])
+                        rc[1].write(nome_at)
+                        rc[2].write(f"{qtd:,.0f}")
+                        rc[3].write(f"R$ {pm:,.2f}")
+                        rc[4].write(f"R$ {vi:,.0f}")
+                        rc[5].write(f"R$ {pa:,.2f}" if pa else "—")
+                        rc[6].write(f"R$ {va:,.0f}" if va else "—")
+                        if var is not None:
+                            sg = "+" if var >= 0 else ""; cor = "green" if var >= 0 else "red"
+                            rc[7].markdown(f":{cor}[**{sg}{var:.1f}%**]")
+                        else:
+                            rc[7].write("—")
+                        rc[8].write(str(p.get("data_compra", "—")))
+                        with rc[9]:
+                            with st.popover("🗑"):
+                                st.caption(f"Remover **{p['ticker']}**?")
+                                if st.button("Confirmar", key=f"del_a_{p['id']}", type="primary"):
+                                    get_supabase().table("posicoes_acoes").delete().eq("id", str(p["id"])).execute()
+                                    st.cache_data.clear(); st.rerun()
+
+                    st.divider()
+                    add_a = f"add_acao_{cliente_id}"
+                    if not st.session_state.get(add_a):
+                        if st.button("＋ Adicionar ação", key=f"btn_add_a_{cliente_id}"):
+                            st.session_state[add_a] = True; st.rerun()
+                    else:
+                        ac = st.columns(COLS_A)
+                        with ac[0]: tk_v  = st.text_input("Ticker", key=f"na_tk_{cliente_id}",  label_visibility="collapsed", placeholder="PETR4").upper().strip()
+                        with ac[2]: qtd_v = st.number_input("Qtd",   key=f"na_qtd_{cliente_id}", label_visibility="collapsed", min_value=0.0, step=1.0,   format="%.0f")
+                        with ac[3]: pm_v  = st.number_input("Médio", key=f"na_pm_{cliente_id}",  label_visibility="collapsed", min_value=0.0, step=0.01, format="%.2f")
+                        with ac[8]: dt_v  = st.date_input("Data",   key=f"na_dt_{cliente_id}",  label_visibility="collapsed")
+                        all_a = bool(tk_v) and qtd_v > 0 and pm_v > 0
+                        with ac[9]:
+                            if st.button("Salvar", key=f"save_a_{cliente_id}", type="primary", disabled=not all_a):
+                                get_supabase().table("posicoes_acoes").insert({
+                                    "cliente_id": cliente_id, "ticker": tk_v,
+                                    "quantidade": qtd_v, "preco_medio_compra": pm_v,
+                                    "data_compra": str(dt_v),
+                                }).execute()
+                                st.session_state[add_a] = False; st.cache_data.clear(); st.rerun()
+                        if st.button("✕ Cancelar", key=f"cancel_a_{cliente_id}"):
+                            st.session_state[add_a] = False; st.rerun()
+
+                # ── Fundos ─────────────────────────────────────────────────────
+                n_f = len(fundos_c)
+                with st.expander(
+                    f"Fundos   ·   R$ {total_fundos_c:,.0f}   ·   {_pct(total_fundos_c):.1f}%   ·   {n_f} posição{'ões' if n_f != 1 else ''}",
+                    expanded=False,
+                ):
+                    hc = st.columns(COLS_F)
+                    for c, h in zip(hc, HDRS_F):
+                        c.markdown(f"**{h}**")
+                    st.divider()
+
+                    for _, p in fundos_c.iterrows():
+                        nome_f = "—"
+                        if not df_ativos_fundos.empty:
+                            m = df_ativos_fundos[df_ativos_fundos["cnpj"] == p["cnpj"]]
+                            if not m.empty: nome_f = m.iloc[0]["nome"]
+                        ca_r  = df_cotas[(df_cotas["cnpj"] == p["cnpj"]) & (df_cotas["mes"] == mes_atual)] if mes_atual else pd.DataFrame()
+                        ca    = float(ca_r.iloc[0]["cota_fechamento"]) if not ca_r.empty else None
+                        cotas = float(p["numero_cotas"]); vaplic = float(p["valor_aplicado"])
+                        va    = ca * cotas if ca else None
+                        var   = (va - vaplic) / vaplic * 100 if va else None
+
+                        rc = st.columns(COLS_F)
+                        rc[0].write(nome_f)
+                        rc[1].write(p["cnpj"])
+                        rc[2].write(f"{cotas:,.0f}")
+                        rc[3].write(f"R$ {vaplic:,.0f}")
+                        rc[4].write(f"R$ {ca:,.4f}" if ca else "—")
+                        rc[5].write(f"R$ {va:,.0f}" if va else "—")
+                        if var is not None:
+                            sg = "+" if var >= 0 else ""; cor = "green" if var >= 0 else "red"
+                            rc[6].markdown(f":{cor}[**{sg}{var:.1f}%**]")
+                        else:
+                            rc[6].write("—")
+                        rc[7].write(str(p.get("data_investimento", "—")))
+                        with rc[8]:
+                            with st.popover("🗑"):
+                                st.caption(f"Remover **{nome_f}**?")
+                                if st.button("Confirmar", key=f"del_f_{p['id']}", type="primary"):
+                                    get_supabase().table("posicoes_fundos").delete().eq("id", str(p["id"])).execute()
+                                    st.cache_data.clear(); st.rerun()
+
+                    st.divider()
+                    add_f = f"add_fundo_{cliente_id}"
+                    if not st.session_state.get(add_f):
+                        if st.button("＋ Adicionar fundo", key=f"btn_add_f_{cliente_id}"):
+                            st.session_state[add_f] = True; st.rerun()
+                    else:
+                        if df_ativos_fundos.empty:
+                            st.warning("Nenhum fundo cadastrado em Ativos Disponíveis.")
+                        else:
+                            opcoes_f = {row["cnpj"]: row["nome"] for _, row in df_ativos_fundos.iterrows()}
+                            fc = st.columns(COLS_F)
+                            with fc[0]:
+                                cnpj_sel = st.selectbox("Fundo", options=list(opcoes_f.keys()),
+                                    format_func=lambda x: opcoes_f[x],
+                                    key=f"nf_cnpj_{cliente_id}", label_visibility="collapsed")
+                            with fc[2]: cotas_v  = st.number_input("Cotas",  key=f"nf_cotas_{cliente_id}",  label_visibility="collapsed", min_value=0.0, step=1.0,   format="%.0f")
+                            with fc[3]: vaplic_v = st.number_input("V.Aplic", key=f"nf_vaplic_{cliente_id}", label_visibility="collapsed", min_value=0.0, step=100.0, format="%.2f")
+                            with fc[7]: dt_fv    = st.date_input("Data",     key=f"nf_dt_{cliente_id}",     label_visibility="collapsed")
+                            all_f = cotas_v > 0 and vaplic_v > 0
+                            with fc[8]:
+                                if st.button("Salvar", key=f"save_f_{cliente_id}", type="primary", disabled=not all_f):
+                                    get_supabase().table("posicoes_fundos").insert({
+                                        "cliente_id": cliente_id, "cnpj": cnpj_sel,
+                                        "numero_cotas": cotas_v, "valor_aplicado": vaplic_v,
+                                        "data_investimento": str(dt_fv),
+                                    }).execute()
+                                    st.session_state[add_f] = False; st.cache_data.clear(); st.rerun()
+                        if st.button("✕ Cancelar", key=f"cancel_f_{cliente_id}"):
+                            st.session_state[add_f] = False; st.rerun()
+
+                # ── Renda Fixa ─────────────────────────────────────────────────
+                n_r = len(rf_c)
+                with st.expander(
+                    f"Renda Fixa   ·   R$ {total_rf_c:,.0f}   ·   {_pct(total_rf_c):.1f}%   ·   {n_r} posição{'ões' if n_r != 1 else ''}",
+                    expanded=False,
+                ):
+                    hc = st.columns(COLS_R)
+                    for c, h in zip(hc, HDRS_R):
+                        c.markdown(f"**{h}**")
+                    st.divider()
+
+                    for _, p in rf_c.iterrows():
+                        nome_rf = "—"; idx_rf = "—"
+                        if not df_ativos_rf.empty:
+                            m = df_ativos_rf[df_ativos_rf["id"] == p["ativo_id"]]
+                            if not m.empty:
+                                nome_rf = m.iloc[0]["nome"]
+                                idx_rf  = m.iloc[0].get("indexacao", "—")
+
+                        rc = st.columns(COLS_R)
+                        rc[0].write(nome_rf)
+                        rc[1].write(idx_rf)
+                        rc[2].write(str(p.get("taxa_contratada", "—")))
+                        rc[3].write(str(p.get("unidade_taxa", "—")))
+                        rc[4].write(f"R$ {float(p['valor_aplicado']):,.0f}")
+                        rc[5].write(str(p.get("data_inicio", "—")))
+                        rc[6].write(str(p.get("data_vencimento", "—")))
+                        with rc[7]:
+                            with st.popover("🗑"):
+                                st.caption(f"Remover **{nome_rf}**?")
+                                if st.button("Confirmar", key=f"del_r_{p['id']}", type="primary"):
+                                    get_supabase().table("posicoes_renda_fixa").delete().eq("id", str(p["id"])).execute()
+                                    st.cache_data.clear(); st.rerun()
+
+                    st.divider()
+                    add_r = f"add_rf_{cliente_id}"
+                    if not st.session_state.get(add_r):
+                        if st.button("＋ Adicionar renda fixa", key=f"btn_add_r_{cliente_id}"):
+                            st.session_state[add_r] = True; st.rerun()
+                    else:
+                        if df_ativos_rf.empty:
+                            st.warning("Nenhum instrumento cadastrado em Ativos Disponíveis.")
+                        else:
+                            opcoes_r = {row["id"]: row["nome"] for _, row in df_ativos_rf.iterrows()}
+                            rc2 = st.columns(COLS_R)
+                            with rc2[0]:
+                                ativo_sel = st.selectbox("Instrumento", options=list(opcoes_r.keys()),
+                                    format_func=lambda x: opcoes_r[x],
+                                    key=f"nr_ativo_{cliente_id}", label_visibility="collapsed")
+                            with rc2[2]: taxa_v   = st.number_input("Taxa",   key=f"nr_taxa_{cliente_id}",   label_visibility="collapsed", min_value=0.0, step=0.1,   format="%.2f")
+                            with rc2[3]: unid_v   = st.selectbox("Unidade", ["% CDI", "% Selic", "% a.a."], key=f"nr_unid_{cliente_id}",   label_visibility="collapsed")
+                            with rc2[4]: vaplic_r = st.number_input("V.Aplic", key=f"nr_vaplic_{cliente_id}", label_visibility="collapsed", min_value=0.0, step=100.0, format="%.2f")
+                            with rc2[5]: dt_ini_v  = st.date_input("Início",  key=f"nr_ini_{cliente_id}",    label_visibility="collapsed")
+                            with rc2[6]: dt_venc_v = st.date_input("Venc.",   key=f"nr_venc_{cliente_id}",   label_visibility="collapsed")
+                            all_r = taxa_v > 0 and vaplic_r > 0
+                            with rc2[7]:
+                                if st.button("Salvar", key=f"save_r_{cliente_id}", type="primary", disabled=not all_r):
+                                    get_supabase().table("posicoes_renda_fixa").insert({
+                                        "cliente_id": cliente_id, "ativo_id": ativo_sel,
+                                        "taxa_contratada": taxa_v, "unidade_taxa": unid_v,
+                                        "valor_aplicado": vaplic_r,
+                                        "data_inicio": str(dt_ini_v),
+                                        "data_vencimento": str(dt_venc_v),
+                                    }).execute()
+                                    st.session_state[add_r] = False; st.cache_data.clear(); st.rerun()
+                        if st.button("✕ Cancelar", key=f"cancel_r_{cliente_id}"):
+                            st.session_state[add_r] = False; st.rerun()
 
             # ── Resultados ────────────────────────────────────────────────────
             elif st.session_state[key] == "resultados":
