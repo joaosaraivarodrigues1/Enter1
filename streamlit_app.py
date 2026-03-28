@@ -107,48 +107,101 @@ elif st.session_state.page == "ativos":
 
     df_acoes  = load_table("ativos_acoes")
     df_fundos = load_table("ativos_fundos")
+    df_rf     = load_table("ativos_renda_fixa")
     df_precos = load_table("precos_acoes")
     df_cotas  = load_table("cotas_fundos")
 
-    # ── Métricas para o resumo ────────────────────────────────────────────────
-    n_acoes       = len(df_acoes)
-    n_fundos      = len(df_fundos)
-    acoes_c_hist  = df_precos["ticker"].nunique() if not df_precos.empty else 0
-    fundos_c_hist = df_cotas["cnpj"].nunique()    if not df_cotas.empty else 0
+    # ── Métricas ──────────────────────────────────────────────────────────────
+    cm1, cm2, cm3, cm4 = st.columns(4)
+    cm1.metric("Total de ativos", len(df_acoes) + len(df_fundos) + len(df_rf))
+    cm2.metric("Ações / FII", len(df_acoes), f"{len(df_precos)} preços históricos")
+    cm3.metric("Fundos", len(df_fundos), f"{len(df_cotas)} cotas históricas")
+    cm4.metric("Renda Fixa", len(df_rf))
 
-    def _periodo(df, col):
-        if df.empty:
-            return "—"
-        return f"{df[col].min()} → {df[col].max()}"
+    st.divider()
 
-    df_resumo = pd.DataFrame({
-        "Tipo":            ["Ações / FII",  "Fundos",       "Total"],
-        "Cadastrados":     [n_acoes,         n_fundos,        n_acoes + n_fundos],
-        "Com histórico":   [acoes_c_hist,    fundos_c_hist,   acoes_c_hist + fundos_c_hist],
-        "Registros":       [len(df_precos),  len(df_cotas),   len(df_precos) + len(df_cotas)],
-        "Período coberto": [
-            _periodo(df_precos, "mes"),
-            _periodo(df_cotas,  "mes"),
-            "—",
-        ],
-    })
+    # ── Layout: tabelas + formulário ──────────────────────────────────────────
+    col_tabs, col_form = st.columns([13, 7])
 
-    # ── Layout superior: resumo + formulário ─────────────────────────────────
-    col_resumo, col_form = st.columns([12, 8])
+    with col_tabs:
+        max_meses_a = df_precos["mes"].nunique() if not df_precos.empty else 1
+        max_meses_f = df_cotas["mes"].nunique()  if not df_cotas.empty else 1
 
-    with col_resumo:
-        st.dataframe(df_resumo, use_container_width=True, hide_index=True, height=178)
+        tab_a, tab_f, tab_rf_view = st.tabs(["Ações / FII", "Fundos", "Renda Fixa"])
+
+        with tab_a:
+            rows_a = []
+            for _, a in df_acoes.iterrows():
+                hist = df_precos[df_precos["ticker"] == a["ticker"]] if not df_precos.empty else pd.DataFrame()
+                ultimo = hist.sort_values("mes").iloc[-1] if not hist.empty else None
+                rows_a.append({
+                    "Ticker":       a["ticker"],
+                    "Nome":         a.get("nome", "—"),
+                    "Meses":        len(hist),
+                    "Último mês":   ultimo["mes"] if ultimo is not None else "—",
+                    "Último preço": float(ultimo["preco_fechamento"]) if ultimo is not None else None,
+                })
+            st.dataframe(
+                pd.DataFrame(rows_a),
+                use_container_width=True, hide_index=True,
+                column_config={
+                    "Meses": st.column_config.ProgressColumn(
+                        "Cobertura", min_value=0, max_value=max_meses_a, format="%d meses",
+                    ),
+                    "Último preço": st.column_config.NumberColumn("Último preço", format="R$ %.2f"),
+                },
+            )
+
+        with tab_f:
+            rows_f = []
+            for _, f in df_fundos.iterrows():
+                hist = df_cotas[df_cotas["cnpj"] == f["cnpj"]] if not df_cotas.empty else pd.DataFrame()
+                ultimo = hist.sort_values("mes").iloc[-1] if not hist.empty else None
+                rows_f.append({
+                    "Nome":         f.get("nome", "—"),
+                    "CNPJ":         f["cnpj"],
+                    "Meses":        len(hist),
+                    "Último mês":   ultimo["mes"] if ultimo is not None else "—",
+                    "Última cota":  float(ultimo["cota_fechamento"]) if ultimo is not None else None,
+                })
+            st.dataframe(
+                pd.DataFrame(rows_f),
+                use_container_width=True, hide_index=True,
+                column_config={
+                    "Meses": st.column_config.ProgressColumn(
+                        "Cobertura", min_value=0, max_value=max_meses_f, format="%d meses",
+                    ),
+                    "Última cota": st.column_config.NumberColumn("Última cota", format="R$ %.4f"),
+                },
+            )
+
+        with tab_rf_view:
+            if df_rf.empty:
+                st.info("Nenhum instrumento de renda fixa cadastrado.")
+            else:
+                st.dataframe(
+                    df_rf[["nome", "instrumento", "indexacao", "isento_ir", "emissor"]],
+                    use_container_width=True, hide_index=True,
+                    column_config={
+                        "nome":        st.column_config.TextColumn("Nome"),
+                        "instrumento": st.column_config.TextColumn("Instrumento"),
+                        "indexacao":   st.column_config.TextColumn("Indexação"),
+                        "isento_ir":   st.column_config.CheckboxColumn("IR Isento"),
+                        "emissor":     st.column_config.TextColumn("Emissor"),
+                    },
+                )
 
     with col_form:
         st.caption("Adicionar ativo")
-        tipo = st.radio("Tipo de ativo", ["Ação / FII", "Fundo", "Renda Fixa"], horizontal=True, label_visibility="collapsed")
+        tipo = st.radio("tipo", ["Ação / FII", "Fundo", "Renda Fixa"],
+                        horizontal=True, label_visibility="collapsed")
 
         with st.form("form_add_ativo"):
             if tipo == "Ação / FII":
                 tipo_ativo = st.selectbox("Tipo", ["Ação", "FII"])
                 ticker = st.text_input("Ticker", placeholder="ex: PETR4").upper().strip()
-                nome   = st.text_input("Nome da empresa", placeholder="ex: Petrobras")
-                submit = st.form_submit_button("Adicionar", type="primary")
+                nome   = st.text_input("Nome", placeholder="ex: Petrobras")
+                submit = st.form_submit_button("Adicionar", type="primary", use_container_width=True)
 
                 if submit:
                     if not ticker or not nome:
@@ -158,19 +211,14 @@ elif st.session_state.page == "ativos":
                             get_supabase().table("ativos_acoes").insert({"ticker": ticker, "nome": nome, "tipo": tipo_ativo}).execute()
                         except APIError as e:
                             if "23505" in str(e):
-                                st.error(f"O ticker **{ticker}** já está cadastrado no banco de dados.")
+                                st.error(f"**{ticker}** já cadastrado.")
                             else:
-                                st.error(f"Erro ao cadastrar ativo: {e}")
+                                st.error(f"Erro: {e}")
                             st.stop()
-
                         st.cache_data.clear()
-
                         with st.status("Adicionando ativo...", expanded=True) as s:
                             st.write("✅ Ativo registrado no banco de dados")
-                            st.write("✅ Ativo registrado no portfólio")
-
                             bar = st.progress(0, text="Importando preços históricos...")
-
                             try:
                                 bar.progress(15, text="Conectando ao brapi.dev...")
                                 resp = http.post(
@@ -182,25 +230,22 @@ elif st.session_state.page == "ativos":
                                 bar.progress(85, text="Salvando no banco de dados...")
                                 data = resp.json()
                                 bar.progress(100, text="Concluído!")
-
                                 if resp.status_code == 200:
-                                    meses = data.get("meses_inseridos", 0)
-                                    st.write(f"✅ {meses} meses de histórico importados")
-                                    s.update(label=f"{ticker} adicionado com sucesso!", state="complete")
+                                    st.write(f"✅ {data.get('meses_inseridos', 0)} meses importados")
+                                    s.update(label=f"{ticker} adicionado!", state="complete")
                                 else:
-                                    err_msg = data.get("error", resp.text)
-                                    st.write(f"⚠️ Preços não importados: {err_msg}")
+                                    st.write(f"⚠️ Preços não importados: {data.get('error', resp.text)}")
                                     s.update(label=f"{ticker} cadastrado (preços pendentes)", state="error")
                             except Exception as e:
                                 bar.progress(100, text="Falhou")
-                                st.write(f"⚠️ Erro de conexão ao importar preços: {e}")
+                                st.write(f"⚠️ Erro de conexão: {e}")
                                 s.update(label=f"{ticker} cadastrado (preços pendentes)", state="error")
 
             elif tipo == "Fundo":
                 cnpj      = st.text_input("CNPJ", placeholder="ex: 12.345.678/0001-90").strip()
-                nome      = st.text_input("Nome do fundo", placeholder="ex: Riza Lotus Plus")
+                nome      = st.text_input("Nome", placeholder="ex: Riza Lotus Plus")
                 categoria = st.selectbox("Categoria", ["RF DI", "RF Simples", "Multimercado RF", "Multimercado", "Long Biased", "FIA"])
-                submit    = st.form_submit_button("Adicionar", type="primary")
+                submit    = st.form_submit_button("Adicionar", type="primary", use_container_width=True)
 
                 if submit:
                     if not cnpj or not nome:
@@ -210,68 +255,36 @@ elif st.session_state.page == "ativos":
                         if res.data:
                             st.success(f"{nome} adicionado.")
                             st.cache_data.clear()
-                            st.info("Para importar o histórico de cotas, rode na sua máquina:")
+                            st.info("Para importar histórico de cotas:")
                             st.code(f'python extract_fundos.py "{cnpj}"', language="bash")
                         else:
                             st.error(f"Erro: {res}")
 
             elif tipo == "Renda Fixa":
-                nome        = st.text_input("Nome do instrumento", placeholder="ex: CDB BTG 110% CDI")
+                nome        = st.text_input("Nome", placeholder="ex: CDB BTG 110% CDI")
                 instrumento = st.selectbox("Instrumento", ["CDB", "LCI", "LCA", "Tesouro Direto", "Debênture"])
                 indexacao   = st.selectbox("Indexação", ["pos_fixado_cdi", "pos_fixado_selic", "prefixado", "ipca_mais"])
                 isento_ir   = st.checkbox("Isento de IR")
                 emissor     = st.text_input("Emissor", placeholder="ex: BTG Pactual (opcional)")
-                submit      = st.form_submit_button("Adicionar", type="primary")
+                submit      = st.form_submit_button("Adicionar", type="primary", use_container_width=True)
 
                 if submit:
                     if not nome:
-                        st.error("Preencha o nome do instrumento.")
+                        st.error("Preencha o nome.")
                     else:
                         try:
                             get_supabase().table("ativos_renda_fixa").insert({
-                                "nome":        nome,
-                                "instrumento": instrumento,
-                                "indexacao":   indexacao,
-                                "isento_ir":   isento_ir,
-                                "emissor":     emissor or None,
+                                "nome": nome, "instrumento": instrumento,
+                                "indexacao": indexacao, "isento_ir": isento_ir,
+                                "emissor": emissor or None,
                             }).execute()
-                            st.success(f"**{nome}** adicionado ao catálogo.")
+                            st.success(f"**{nome}** adicionado.")
                             st.cache_data.clear()
                         except APIError as e:
                             if "23505" in str(e):
-                                st.error(f"O instrumento **{nome}** já está cadastrado.")
+                                st.error(f"**{nome}** já cadastrado.")
                             else:
-                                st.error(f"Erro ao cadastrar: {e}")
-
-    # ── Tabela detalhada ──────────────────────────────────────────────────────
-    st.divider()
-
-    rows = []
-    for _, a in df_acoes.iterrows():
-        hist = df_precos[df_precos["ticker"] == a["ticker"]] if not df_precos.empty else pd.DataFrame()
-        rows.append({
-            "Tipo":           "Ação / FII",
-            "Identificador":  a["ticker"],
-            "Nome":           a.get("nome", "—"),
-            "Primeiro mês":   hist["mes"].min() if not hist.empty else "—",
-            "Último mês":     hist["mes"].max() if not hist.empty else "—",
-            "Meses de dados": len(hist) if not hist.empty else 0,
-        })
-    for _, f in df_fundos.iterrows():
-        hist = df_cotas[df_cotas["cnpj"] == f["cnpj"]] if not df_cotas.empty else pd.DataFrame()
-        rows.append({
-            "Tipo":           "Fundo",
-            "Identificador":  f["cnpj"],
-            "Nome":           f.get("nome", "—"),
-            "Primeiro mês":   hist["mes"].min() if not hist.empty else "—",
-            "Último mês":     hist["mes"].max() if not hist.empty else "—",
-            "Meses de dados": len(hist) if not hist.empty else 0,
-        })
-
-    if rows:
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
-    else:
-        st.info("Nenhum ativo cadastrado.")
+                                st.error(f"Erro: {e}")
 
 elif st.session_state.page == "indice_mercado":
     col_title, col_btn = st.columns([5, 1])
