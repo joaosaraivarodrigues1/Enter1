@@ -241,12 +241,6 @@ elif st.session_state.page == "clientes":
 
                 def _pct(v): return v / total_g * 100
 
-                st.markdown("""
-                <style>
-                details > summary p { font-size: 1.05rem !important; font-weight: 700 !important; letter-spacing: 0.015em; }
-                </style>
-                """, unsafe_allow_html=True)
-
                 COLS_A = [0.9, 1.8, 0.8, 1.1, 1.1, 1.1, 1.1, 0.8, 1.1, 0.5]
                 HDRS_A = ["Ticker", "Nome", "Qtd", "P. Médio", "V. Invest.", "P. Atual", "V. Atual", "Var %", "Data compra", ""]
                 COLS_F = [2.2, 1.8, 0.9, 1.1, 1.1, 1.1, 0.8, 1.1, 0.5]
@@ -254,12 +248,30 @@ elif st.session_state.page == "clientes":
                 COLS_R = [2.2, 1.3, 0.8, 0.9, 1.1, 1.1, 1.1, 0.5]
                 HDRS_R = ["Instrumento", "Indexação", "Taxa", "Unidade", "V. Aplicado", "Início", "Vencimento", ""]
 
+                def _sec_header(label, n_pos, total, pct, tkey):
+                    if tkey not in st.session_state:
+                        st.session_state[tkey] = False
+                    _ha, _hb, _hc = st.columns([0.35, 7, 3])
+                    with _ha:
+                        if st.button("▼" if st.session_state[tkey] else "▶", key=f"tog_{tkey}"):
+                            st.session_state[tkey] = not st.session_state[tkey]; st.rerun()
+                    _hb.markdown(
+                        f'<p style="font-size:1.2rem;font-weight:400;margin:0;padding:4px 0">'
+                        f'{label}<span style="font-size:1.0rem;color:#9ca3af;margin-left:2.5rem">'
+                        f'{n_pos} posições</span></p>',
+                        unsafe_allow_html=True,
+                    )
+                    _hc.markdown(
+                        f'<p style="text-align:right;font-size:1.05rem;font-weight:400;margin:0;padding:4px 0">'
+                        f'R$ {total:,.2f}&ensp;&ensp;{pct:.1f}%</p>',
+                        unsafe_allow_html=True,
+                    )
+                    st.divider()
+                    return st.session_state[tkey]
+
                 # ── Ações ──────────────────────────────────────────────────────
                 n_a = len(acoes_c)
-                with st.expander(
-                    f"Ações   ·   R$ {total_acoes_c:,.2f}   ·   {_pct(total_acoes_c):.1f}% do portfólio   ·   {n_a} posição{'ões' if n_a != 1 else ''}",
-                    expanded=False,
-                ):
+                if _sec_header("Ações", n_a, total_acoes_c, _pct(total_acoes_c), f"exp_a_{cliente_id}"):
                     hc = st.columns(COLS_A)
                     for c, h in zip(hc, HDRS_A):
                         c.markdown(f"**{h}**")
@@ -344,10 +356,7 @@ elif st.session_state.page == "clientes":
 
                 # ── Fundos ─────────────────────────────────────────────────────
                 n_f = len(fundos_c)
-                with st.expander(
-                    f"Fundos   ·   R$ {total_fundos_c:,.2f}   ·   {_pct(total_fundos_c):.1f}% do portfólio   ·   {n_f} posição{'ões' if n_f != 1 else ''}",
-                    expanded=False,
-                ):
+                if _sec_header("Fundos", n_f, total_fundos_c, _pct(total_fundos_c), f"exp_f_{cliente_id}"):
                     hc = st.columns(COLS_F)
                     for c, h in zip(hc, HDRS_F):
                         c.markdown(f"**{h}**")
@@ -431,10 +440,7 @@ elif st.session_state.page == "clientes":
 
                 # ── Renda Fixa ─────────────────────────────────────────────────
                 n_r = len(rf_c)
-                with st.expander(
-                    f"Renda Fixa   ·   R$ {total_rf_c:,.2f}   ·   {_pct(total_rf_c):.1f}% do portfólio   ·   {n_r} posição{'ões' if n_r != 1 else ''}",
-                    expanded=False,
-                ):
+                if _sec_header("Renda Fixa", n_r, total_rf_c, _pct(total_rf_c), f"exp_r_{cliente_id}"):
                     hc = st.columns(COLS_R)
                     for c, h in zip(hc, HDRS_R):
                         c.markdown(f"**{h}**")
