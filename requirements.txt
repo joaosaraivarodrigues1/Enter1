@@ -3,3 +3,4 @@ pandas
 supabase
 requests
 plotly
+openai
