@@ -86,6 +86,8 @@ elif st.session_state.page == "clientes":
     df_pos_fundos    = load_table("posicoes_fundos")
     df_pos_rf        = load_table("posicoes_renda_fixa")
     df_ativos_acoes  = load_table("ativos_acoes")
+    df_ativos_fundos = load_table("ativos_fundos")
+    df_ativos_rf     = load_table("ativos_renda_fixa")
     df_precos        = load_table("precos_acoes")
     df_cotas         = load_table("cotas_fundos")
     df_mercado       = load_table("dados_mercado")
@@ -141,18 +143,28 @@ elif st.session_state.page == "clientes":
                         "Data entrada":    p["data_compra"],
                     })
                 for _, p in fundos_c.iterrows():
+                    nome_fundo = "—"
+                    if not df_ativos_fundos.empty:
+                        m = df_ativos_fundos[df_ativos_fundos["cnpj"] == p["cnpj"]]
+                        if not m.empty:
+                            nome_fundo = m.iloc[0]["nome"]
                     rows.append({
                         "Tipo":            "Fundo",
-                        "Ativo":           p.get("nome", "—"),
+                        "Ativo":           nome_fundo,
                         "Qtd / Cotas":     float(p["numero_cotas"]),
                         "Preço médio":     None,
                         "Valor investido": float(p["valor_aplicado"]),
                         "Data entrada":    p["data_investimento"],
                     })
                 for _, p in rf_c.iterrows():
+                    nome_rf = "—"
+                    if not df_ativos_rf.empty:
+                        m = df_ativos_rf[df_ativos_rf["id"] == p["ativo_id"]]
+                        if not m.empty:
+                            nome_rf = m.iloc[0]["nome"]
                     rows.append({
                         "Tipo":            "Renda Fixa",
-                        "Ativo":           p.get("descricao", "—"),
+                        "Ativo":           nome_rf,
                         "Qtd / Cotas":     None,
                         "Preço médio":     None,
                         "Valor investido": float(p["valor_aplicado"]),
@@ -199,6 +211,11 @@ elif st.session_state.page == "clientes":
 
                 for _, p in fundos_c.iterrows():
                     cnpj = p["cnpj"]
+                    nome_fundo = cnpj
+                    if not df_ativos_fundos.empty:
+                        m = df_ativos_fundos[df_ativos_fundos["cnpj"] == cnpj]
+                        if not m.empty:
+                            nome_fundo = m.iloc[0]["nome"]
                     ca_row   = df_cotas[(df_cotas["cnpj"] == cnpj) & (df_cotas["mes"] == mes_atual)]
                     cant_row = df_cotas[(df_cotas["cnpj"] == cnpj) & (df_cotas["mes"] == mes_ant)]
                     if not ca_row.empty and not cant_row.empty:
@@ -207,19 +224,24 @@ elif st.session_state.page == "clientes":
                         ret  = (ca - cant) / cant * 100
                         cotas = float(p["numero_cotas"])
                         rows_ret.append({
-                            "Ativo": p.get("nome", cnpj), "Tipo": "Fundo",
+                            "Ativo": nome_fundo, "Tipo": "Fundo",
                             "Retorno mês (%)": ret,
                             "Variação R$":     cotas * (ca - cant),
                             "Valor atual":     cotas * ca,
                         })
                     else:
-                        rows_ret.append({"Ativo": p.get("nome", cnpj), "Tipo": "Fundo",
+                        rows_ret.append({"Ativo": nome_fundo, "Tipo": "Fundo",
                                          "Retorno mês (%)": None, "Variação R$": None, "Valor atual": None})
 
                 for _, p in rf_c.iterrows():
                     ret, val = None, float(p.get("valor_aplicado", 0) or 0)
+                    nome_rf, idx = "—", ""
+                    if not df_ativos_rf.empty:
+                        m = df_ativos_rf[df_ativos_rf["id"] == p["ativo_id"]]
+                        if not m.empty:
+                            nome_rf = m.iloc[0]["nome"]
+                            idx     = m.iloc[0].get("indexacao", "")
                     if row_merc is not None:
-                        idx  = p.get("indexacao", "")
                         taxa = float(p.get("taxa_contratada", 0) or 0)
                         if idx == "pos_fixado_cdi":
                             ret = float(row_merc.get("cdi_mensal", 0) or 0) * (taxa / 100)
@@ -232,7 +254,7 @@ elif st.session_state.page == "clientes":
                             spread_m = (1 + taxa / 100) ** (1 / 12) - 1
                             ret = ((1 + ipca) * (1 + spread_m) - 1) * 100
                     rows_ret.append({
-                        "Ativo": p.get("descricao", "—"), "Tipo": "Renda Fixa",
+                        "Ativo": nome_rf, "Tipo": "Renda Fixa",
                         "Retorno mês (%)": ret,
                         "Variação R$":     val * ret / 100 if ret is not None else None,
                         "Valor atual":     val * (1 + ret / 100) if ret is not None else val,
