@@ -49,7 +49,7 @@ if col_home.button("Home", use_container_width=True):
     st.session_state.page = "home"
 if col_db.button("Banco de dados", use_container_width=True):
     st.session_state.page = "banco_de_dados"
-if col_ativos.button("Ativos", use_container_width=True):
+if col_ativos.button("Ativos Disponíveis", use_container_width=True):
     st.session_state.page = "ativos"
 if col_indices.button("Índice Mercado", use_container_width=True):
     st.session_state.page = "indice_mercado"
@@ -103,112 +103,175 @@ elif st.session_state.page == "banco_de_dados":
         st.dataframe(df, use_container_width=True, hide_index=True)
 
 elif st.session_state.page == "ativos":
-    st.subheader("Adicionar ativo")
-    st.caption("Cadastra um novo ativo no catálogo. Após o cadastro, o ativo estará disponível para posições e coleta de dados.")
+    st.subheader("Ativos Disponíveis")
 
-    tipo = st.radio("Tipo de ativo", ["Ação / FII", "Fundo", "Renda Fixa"], horizontal=True)
+    df_acoes  = load_table("ativos_acoes")
+    df_fundos = load_table("ativos_fundos")
+    df_precos = load_table("precos_acoes")
+    df_cotas  = load_table("cotas_fundos")
 
-    with st.form("form_add_ativo"):
-        if tipo == "Ação / FII":
-            tipo_ativo = st.selectbox("Tipo", ["Ação", "FII"])
-            ticker = st.text_input("Ticker", placeholder="ex: PETR4").upper().strip()
-            nome   = st.text_input("Nome da empresa", placeholder="ex: Petrobras")
-            submit = st.form_submit_button("Adicionar", type="primary")
+    # ── Métricas para o resumo ────────────────────────────────────────────────
+    n_acoes       = len(df_acoes)
+    n_fundos      = len(df_fundos)
+    acoes_c_hist  = df_precos["ticker"].nunique() if not df_precos.empty else 0
+    fundos_c_hist = df_cotas["cnpj"].nunique()    if not df_cotas.empty else 0
 
-            if submit:
-                if not ticker or not nome:
-                    st.error("Preencha ticker e nome.")
-                else:
-                    # Etapa 1: inserir no catálogo
-                    try:
-                        get_supabase().table("ativos_acoes").insert({"ticker": ticker, "nome": nome, "tipo": tipo_ativo}).execute()
-                    except APIError as e:
-                        if "23505" in str(e):
-                            st.error(f"O ticker **{ticker}** já está cadastrado no banco de dados.")
-                        else:
-                            st.error(f"Erro ao cadastrar ativo: {e}")
-                        st.stop()
+    def _periodo(df, col):
+        if df.empty:
+            return "—"
+        return f"{df[col].min()} → {df[col].max()}"
 
-                    st.cache_data.clear()
+    df_resumo = pd.DataFrame({
+        "Tipo":            ["Ações / FII",  "Fundos",       "Total"],
+        "Cadastrados":     [n_acoes,         n_fundos,        n_acoes + n_fundos],
+        "Com histórico":   [acoes_c_hist,    fundos_c_hist,   acoes_c_hist + fundos_c_hist],
+        "Registros":       [len(df_precos),  len(df_cotas),   len(df_precos) + len(df_cotas)],
+        "Período coberto": [
+            _periodo(df_precos, "mes"),
+            _periodo(df_cotas,  "mes"),
+            "—",
+        ],
+    })
 
-                    # Etapa 2: progresso + busca de preços históricos
-                    with st.status("Adicionando ativo...", expanded=True) as s:
-                        st.write("✅ Ativo registrado no banco de dados")
-                        st.write("✅ Ativo registrado no portfólio")
+    # ── Layout superior: resumo + formulário ─────────────────────────────────
+    col_resumo, col_form = st.columns([12, 8])
 
-                        bar = st.progress(0, text="Importando preços históricos...")
+    with col_resumo:
+        st.dataframe(df_resumo, use_container_width=True, hide_index=True, height=178)
 
-                        try:
-                            bar.progress(15, text="Conectando ao brapi.dev...")
-                            resp = http.post(
-                                f"{functions_url()}/fetch-acoes",
-                                headers={**auth_header(), "Content-Type": "application/json"},
-                                json={"ticker": ticker},
-                                timeout=120,
-                            )
-                            bar.progress(85, text="Salvando no banco de dados...")
-                            data = resp.json()
-                            bar.progress(100, text="Concluído!")
+    with col_form:
+        st.caption("Adicionar ativo")
+        tipo = st.radio("Tipo de ativo", ["Ação / FII", "Fundo", "Renda Fixa"], horizontal=True, label_visibility="collapsed")
 
-                            if resp.status_code == 200:
-                                meses = data.get("meses_inseridos", 0)
-                                st.write(f"✅ {meses} meses de histórico importados")
-                                s.update(label=f"{ticker} adicionado com sucesso!", state="complete")
-                            else:
-                                err_msg = data.get("error", resp.text)
-                                st.write(f"⚠️ Preços não importados: {err_msg}")
-                                s.update(label=f"{ticker} cadastrado (preços pendentes)", state="error")
-                        except Exception as e:
-                            bar.progress(100, text="Falhou")
-                            st.write(f"⚠️ Erro de conexão ao importar preços: {e}")
-                            s.update(label=f"{ticker} cadastrado (preços pendentes)", state="error")
+        with st.form("form_add_ativo"):
+            if tipo == "Ação / FII":
+                tipo_ativo = st.selectbox("Tipo", ["Ação", "FII"])
+                ticker = st.text_input("Ticker", placeholder="ex: PETR4").upper().strip()
+                nome   = st.text_input("Nome da empresa", placeholder="ex: Petrobras")
+                submit = st.form_submit_button("Adicionar", type="primary")
 
-        elif tipo == "Fundo":
-            cnpj      = st.text_input("CNPJ", placeholder="ex: 12.345.678/0001-90").strip()
-            nome      = st.text_input("Nome do fundo", placeholder="ex: Riza Lotus Plus")
-            categoria = st.selectbox("Categoria", ["RF DI", "RF Simples", "Multimercado RF", "Multimercado", "Long Biased", "FIA"])
-            submit    = st.form_submit_button("Adicionar", type="primary")
-
-            if submit:
-                if not cnpj or not nome:
-                    st.error("Preencha CNPJ e nome.")
-                else:
-                    res = get_supabase().table("ativos_fundos").insert({"cnpj": cnpj, "nome": nome, "categoria": categoria}).execute()
-                    if res.data:
-                        st.success(f"{nome} adicionado.")
-                        st.cache_data.clear()
-                        st.info("Para importar o histórico de cotas, rode na sua máquina:")
-                        st.code(f'python extract_fundos.py "{cnpj}"', language="bash")
+                if submit:
+                    if not ticker or not nome:
+                        st.error("Preencha ticker e nome.")
                     else:
-                        st.error(f"Erro: {res}")
+                        try:
+                            get_supabase().table("ativos_acoes").insert({"ticker": ticker, "nome": nome, "tipo": tipo_ativo}).execute()
+                        except APIError as e:
+                            if "23505" in str(e):
+                                st.error(f"O ticker **{ticker}** já está cadastrado no banco de dados.")
+                            else:
+                                st.error(f"Erro ao cadastrar ativo: {e}")
+                            st.stop()
 
-        elif tipo == "Renda Fixa":
-            nome        = st.text_input("Nome do instrumento", placeholder="ex: CDB BTG 110% CDI")
-            instrumento = st.selectbox("Instrumento", ["CDB", "LCI", "LCA", "Tesouro Direto", "Debênture"])
-            indexacao   = st.selectbox("Indexação", ["pos_fixado_cdi", "pos_fixado_selic", "prefixado", "ipca_mais"])
-            isento_ir   = st.checkbox("Isento de IR")
-            emissor     = st.text_input("Emissor", placeholder="ex: BTG Pactual (opcional)")
-            submit      = st.form_submit_button("Adicionar", type="primary")
-
-            if submit:
-                if not nome:
-                    st.error("Preencha o nome do instrumento.")
-                else:
-                    try:
-                        get_supabase().table("ativos_renda_fixa").insert({
-                            "nome":        nome,
-                            "instrumento": instrumento,
-                            "indexacao":   indexacao,
-                            "isento_ir":   isento_ir,
-                            "emissor":     emissor or None,
-                        }).execute()
-                        st.success(f"**{nome}** adicionado ao catálogo.")
                         st.cache_data.clear()
-                    except APIError as e:
-                        if "23505" in str(e):
-                            st.error(f"O instrumento **{nome}** já está cadastrado.")
+
+                        with st.status("Adicionando ativo...", expanded=True) as s:
+                            st.write("✅ Ativo registrado no banco de dados")
+                            st.write("✅ Ativo registrado no portfólio")
+
+                            bar = st.progress(0, text="Importando preços históricos...")
+
+                            try:
+                                bar.progress(15, text="Conectando ao brapi.dev...")
+                                resp = http.post(
+                                    f"{functions_url()}/fetch-acoes",
+                                    headers={**auth_header(), "Content-Type": "application/json"},
+                                    json={"ticker": ticker},
+                                    timeout=120,
+                                )
+                                bar.progress(85, text="Salvando no banco de dados...")
+                                data = resp.json()
+                                bar.progress(100, text="Concluído!")
+
+                                if resp.status_code == 200:
+                                    meses = data.get("meses_inseridos", 0)
+                                    st.write(f"✅ {meses} meses de histórico importados")
+                                    s.update(label=f"{ticker} adicionado com sucesso!", state="complete")
+                                else:
+                                    err_msg = data.get("error", resp.text)
+                                    st.write(f"⚠️ Preços não importados: {err_msg}")
+                                    s.update(label=f"{ticker} cadastrado (preços pendentes)", state="error")
+                            except Exception as e:
+                                bar.progress(100, text="Falhou")
+                                st.write(f"⚠️ Erro de conexão ao importar preços: {e}")
+                                s.update(label=f"{ticker} cadastrado (preços pendentes)", state="error")
+
+            elif tipo == "Fundo":
+                cnpj      = st.text_input("CNPJ", placeholder="ex: 12.345.678/0001-90").strip()
+                nome      = st.text_input("Nome do fundo", placeholder="ex: Riza Lotus Plus")
+                categoria = st.selectbox("Categoria", ["RF DI", "RF Simples", "Multimercado RF", "Multimercado", "Long Biased", "FIA"])
+                submit    = st.form_submit_button("Adicionar", type="primary")
+
+                if submit:
+                    if not cnpj or not nome:
+                        st.error("Preencha CNPJ e nome.")
+                    else:
+                        res = get_supabase().table("ativos_fundos").insert({"cnpj": cnpj, "nome": nome, "categoria": categoria}).execute()
+                        if res.data:
+                            st.success(f"{nome} adicionado.")
+                            st.cache_data.clear()
+                            st.info("Para importar o histórico de cotas, rode na sua máquina:")
+                            st.code(f'python extract_fundos.py "{cnpj}"', language="bash")
                         else:
-                            st.error(f"Erro ao cadastrar: {e}")
+                            st.error(f"Erro: {res}")
+
+            elif tipo == "Renda Fixa":
+                nome        = st.text_input("Nome do instrumento", placeholder="ex: CDB BTG 110% CDI")
+                instrumento = st.selectbox("Instrumento", ["CDB", "LCI", "LCA", "Tesouro Direto", "Debênture"])
+                indexacao   = st.selectbox("Indexação", ["pos_fixado_cdi", "pos_fixado_selic", "prefixado", "ipca_mais"])
+                isento_ir   = st.checkbox("Isento de IR")
+                emissor     = st.text_input("Emissor", placeholder="ex: BTG Pactual (opcional)")
+                submit      = st.form_submit_button("Adicionar", type="primary")
+
+                if submit:
+                    if not nome:
+                        st.error("Preencha o nome do instrumento.")
+                    else:
+                        try:
+                            get_supabase().table("ativos_renda_fixa").insert({
+                                "nome":        nome,
+                                "instrumento": instrumento,
+                                "indexacao":   indexacao,
+                                "isento_ir":   isento_ir,
+                                "emissor":     emissor or None,
+                            }).execute()
+                            st.success(f"**{nome}** adicionado ao catálogo.")
+                            st.cache_data.clear()
+                        except APIError as e:
+                            if "23505" in str(e):
+                                st.error(f"O instrumento **{nome}** já está cadastrado.")
+                            else:
+                                st.error(f"Erro ao cadastrar: {e}")
+
+    # ── Tabela detalhada ──────────────────────────────────────────────────────
+    st.divider()
+
+    rows = []
+    for _, a in df_acoes.iterrows():
+        hist = df_precos[df_precos["ticker"] == a["ticker"]] if not df_precos.empty else pd.DataFrame()
+        rows.append({
+            "Tipo":           "Ação / FII",
+            "Identificador":  a["ticker"],
+            "Nome":           a.get("nome", "—"),
+            "Primeiro mês":   hist["mes"].min() if not hist.empty else "—",
+            "Último mês":     hist["mes"].max() if not hist.empty else "—",
+            "Meses de dados": len(hist) if not hist.empty else 0,
+        })
+    for _, f in df_fundos.iterrows():
+        hist = df_cotas[df_cotas["cnpj"] == f["cnpj"]] if not df_cotas.empty else pd.DataFrame()
+        rows.append({
+            "Tipo":           "Fundo",
+            "Identificador":  f["cnpj"],
+            "Nome":           f.get("nome", "—"),
+            "Primeiro mês":   hist["mes"].min() if not hist.empty else "—",
+            "Último mês":     hist["mes"].max() if not hist.empty else "—",
+            "Meses de dados": len(hist) if not hist.empty else 0,
+        })
+
+    if rows:
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    else:
+        st.info("Nenhum ativo cadastrado.")
 
 elif st.session_state.page == "indice_mercado":
     col_title, col_btn = st.columns([5, 1])
