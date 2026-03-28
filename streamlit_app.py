@@ -43,12 +43,12 @@ if "page" not in st.session_state:
 
 st.title("Xp - Análise de portfólio e rendimentos")
 
-col_home, col_db, col_ativos, col_indices, *_ = st.columns([1, 1, 1, 1, 5])
+col_home, col_clientes, col_ativos, col_indices, *_ = st.columns([1, 1, 1, 1, 5])
 
 if col_home.button("Home", use_container_width=True):
     st.session_state.page = "home"
-if col_db.button("Banco de dados", use_container_width=True):
-    st.session_state.page = "banco_de_dados"
+if col_clientes.button("Clientes", use_container_width=True):
+    st.session_state.page = "clientes"
 if col_ativos.button("Ativos Disponíveis", use_container_width=True):
     st.session_state.page = "ativos"
 if col_indices.button("Índice Mercado", use_container_width=True):
@@ -77,30 +77,16 @@ if st.session_state.page == "home":
     - `precos_acoes` / `cotas_fundos` / `dados_mercado` — série histórica mensal
     """)
 
-elif st.session_state.page == "banco_de_dados":
-    st.subheader("Banco de dados")
+elif st.session_state.page == "clientes":
+    st.subheader("Clientes")
 
-    tabelas = [
-        "ativos_acoes",
-        "ativos_fundos",
-        "ativos_renda_fixa",
-        "clientes",
-        "posicoes_acoes",
-        "posicoes_fundos",
-        "posicoes_renda_fixa",
-        "precos_acoes",
-        "cotas_fundos",
-        "dados_mercado",
-    ]
+    tab_carteira, tab_resultados = st.tabs(["Carteira", "Resultados"])
 
-    sel = st.selectbox("Tabela", tabelas)
-    df = load_table(sel)
+    with tab_carteira:
+        st.info("Em construção.")
 
-    if df.empty:
-        st.info("Tabela vazia.")
-    else:
-        st.caption(f"{len(df)} registros")
-        st.dataframe(df, use_container_width=True, hide_index=True)
+    with tab_resultados:
+        st.info("Em construção.")
 
 elif st.session_state.page == "ativos":
     st.subheader("Ativos Disponíveis")
