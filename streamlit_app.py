@@ -241,6 +241,12 @@ elif st.session_state.page == "clientes":
 
                 def _pct(v): return v / total_g * 100
 
+                st.markdown("""
+                <style>
+                details > summary p { font-size: 1.05rem !important; font-weight: 700 !important; letter-spacing: 0.015em; }
+                </style>
+                """, unsafe_allow_html=True)
+
                 COLS_A = [0.9, 1.8, 0.8, 1.1, 1.1, 1.1, 1.1, 0.8, 1.1, 0.5]
                 HDRS_A = ["Ticker", "Nome", "Qtd", "P. Médio", "V. Invest.", "P. Atual", "V. Atual", "Var %", "Data compra", ""]
                 COLS_F = [2.2, 1.8, 0.9, 1.1, 1.1, 1.1, 0.8, 1.1, 0.5]
@@ -251,7 +257,7 @@ elif st.session_state.page == "clientes":
                 # ── Ações ──────────────────────────────────────────────────────
                 n_a = len(acoes_c)
                 with st.expander(
-                    f"Ações   ·   R$ {total_acoes_c:,.0f}   ·   {_pct(total_acoes_c):.1f}%   ·   {n_a} posição{'ões' if n_a != 1 else ''}",
+                    f"Ações   ·   R$ {total_acoes_c:,.2f}   ·   {_pct(total_acoes_c):.1f}% do portfólio   ·   {n_a} posição{'ões' if n_a != 1 else ''}",
                     expanded=False,
                 ):
                     hc = st.columns(COLS_A)
@@ -275,7 +281,7 @@ elif st.session_state.page == "clientes":
                         rc[1].write(nome_at)
                         rc[2].write(f"{qtd:,.0f}")
                         rc[3].write(f"R$ {pm:,.2f}")
-                        rc[4].write(f"R$ {vi:,.0f}")
+                        rc[4].markdown(f"**R$ {vi:,.0f}**")
                         rc[5].write(f"R$ {pa:,.2f}" if pa else "—")
                         rc[6].write(f"R$ {va:,.0f}" if va else "—")
                         if var is not None:
@@ -302,30 +308,30 @@ elif st.session_state.page == "clientes":
                         else:
                             opcoes_a = {row["ticker"]: f"{row['ticker']} — {row.get('nome', row['ticker'])}"
                                         for _, row in df_ativos_acoes.iterrows()}
-                            ac = st.columns(COLS_A)
+                            ac = st.columns([4, 1.5, 3, 1])
                             with ac[0]:
                                 tk_sel = st.selectbox("Ativo", options=list(opcoes_a.keys()),
                                     format_func=lambda x: opcoes_a[x],
                                     key=f"na_tk_{cliente_id}", label_visibility="collapsed")
-                            with ac[2]:
+                            with ac[1]:
                                 qtd_str = st.text_input("Qtd", key=f"na_qtd_{cliente_id}",
-                                    label_visibility="collapsed", placeholder="ex: 100")
+                                    label_visibility="collapsed", placeholder="Quantidade")
                             try:
                                 qtd_v = float(qtd_str.replace(",", ".")) if qtd_str.strip() else 0.0
                             except ValueError:
                                 qtd_v = 0.0
                             pa_r = df_precos[(df_precos["ticker"] == tk_sel) & (df_precos["mes"] == mes_atual)] if mes_atual and tk_sel else pd.DataFrame()
                             preco_at = float(pa_r.iloc[0]["preco_fechamento"]) if not pa_r.empty else None
-                            with ac[5]:
-                                if preco_at is not None:
-                                    st.write(f"R$ {preco_at:,.2f}")
+                            with ac[2]:
+                                if preco_at is not None and qtd_v > 0:
+                                    st.markdown(f"Preço: R$ {preco_at:,.2f} &nbsp;·&nbsp; Total: **R$ {preco_at * qtd_v:,.0f}**", unsafe_allow_html=True)
+                                elif preco_at is not None:
+                                    st.caption(f"Preço em {mes_atual}: R$ {preco_at:,.2f}")
                                 else:
-                                    st.caption("sem preço no mês")
-                            if preco_at and qtd_v > 0:
-                                ac[6].write(f"R$ {preco_at * qtd_v:,.0f}")
+                                    st.caption("Sem preço para o mês selecionado")
                             all_a = bool(tk_sel) and qtd_v > 0 and preco_at is not None
-                            with ac[9]:
-                                if st.button("Salvar", key=f"save_a_{cliente_id}", type="primary", disabled=not all_a):
+                            with ac[3]:
+                                if st.button("Salvar", key=f"save_a_{cliente_id}", type="primary", disabled=not all_a, use_container_width=True):
                                     data_compra = (mes_atual + "-01") if mes_atual else pd.Timestamp.today().strftime("%Y-%m-%d")
                                     get_supabase().table("posicoes_acoes").insert({
                                         "cliente_id": cliente_id, "ticker": tk_sel,
@@ -339,7 +345,7 @@ elif st.session_state.page == "clientes":
                 # ── Fundos ─────────────────────────────────────────────────────
                 n_f = len(fundos_c)
                 with st.expander(
-                    f"Fundos   ·   R$ {total_fundos_c:,.0f}   ·   {_pct(total_fundos_c):.1f}%   ·   {n_f} posição{'ões' if n_f != 1 else ''}",
+                    f"Fundos   ·   R$ {total_fundos_c:,.2f}   ·   {_pct(total_fundos_c):.1f}% do portfólio   ·   {n_f} posição{'ões' if n_f != 1 else ''}",
                     expanded=False,
                 ):
                     hc = st.columns(COLS_F)
@@ -362,7 +368,7 @@ elif st.session_state.page == "clientes":
                         rc[0].write(nome_f)
                         rc[1].write(p["cnpj"])
                         rc[2].write(f"{cotas:,.0f}")
-                        rc[3].write(f"R$ {vaplic:,.0f}")
+                        rc[3].markdown(f"**R$ {vaplic:,.0f}**")
                         rc[4].write(f"R$ {ca:,.4f}" if ca else "—")
                         rc[5].write(f"R$ {va:,.0f}" if va else "—")
                         if var is not None:
@@ -388,31 +394,31 @@ elif st.session_state.page == "clientes":
                             st.warning("Nenhum fundo cadastrado em Ativos Disponíveis.")
                         else:
                             opcoes_f = {row["cnpj"]: row["nome"] for _, row in df_ativos_fundos.iterrows()}
-                            fc = st.columns(COLS_F)
+                            fc = st.columns([4, 1.5, 3, 1])
                             with fc[0]:
                                 cnpj_sel = st.selectbox("Fundo", options=list(opcoes_f.keys()),
                                     format_func=lambda x: opcoes_f[x],
                                     key=f"nf_cnpj_{cliente_id}", label_visibility="collapsed")
-                            with fc[2]:
+                            with fc[1]:
                                 cotas_str = st.text_input("Cotas", key=f"nf_cotas_{cliente_id}",
-                                    label_visibility="collapsed", placeholder="ex: 1000")
+                                    label_visibility="collapsed", placeholder="Nº de cotas")
                             try:
                                 cotas_v = float(cotas_str.replace(",", ".")) if cotas_str.strip() else 0.0
                             except ValueError:
                                 cotas_v = 0.0
                             ca_r = df_cotas[(df_cotas["cnpj"] == cnpj_sel) & (df_cotas["mes"] == mes_atual)] if mes_atual and cnpj_sel else pd.DataFrame()
                             cota_at = float(ca_r.iloc[0]["cota_fechamento"]) if not ca_r.empty else None
-                            with fc[4]:
-                                if cota_at is not None:
-                                    st.write(f"R$ {cota_at:,.4f}")
-                                else:
-                                    st.caption("sem cota no mês")
                             vaplic_calc = cotas_v * cota_at if (cota_at and cotas_v > 0) else None
-                            if vaplic_calc:
-                                fc[3].write(f"R$ {vaplic_calc:,.0f}")
+                            with fc[2]:
+                                if cota_at is not None and cotas_v > 0:
+                                    st.markdown(f"Cota: R$ {cota_at:,.4f} &nbsp;·&nbsp; Total: **R$ {vaplic_calc:,.0f}**", unsafe_allow_html=True)
+                                elif cota_at is not None:
+                                    st.caption(f"Cota em {mes_atual}: R$ {cota_at:,.4f}")
+                                else:
+                                    st.caption("Sem cota para o mês selecionado")
                             all_f = cotas_v > 0 and cota_at is not None
-                            with fc[8]:
-                                if st.button("Salvar", key=f"save_f_{cliente_id}", type="primary", disabled=not all_f):
+                            with fc[3]:
+                                if st.button("Salvar", key=f"save_f_{cliente_id}", type="primary", disabled=not all_f, use_container_width=True):
                                     data_inv = (mes_atual + "-01") if mes_atual else pd.Timestamp.today().strftime("%Y-%m-%d")
                                     get_supabase().table("posicoes_fundos").insert({
                                         "cliente_id": cliente_id, "cnpj": cnpj_sel,
@@ -426,7 +432,7 @@ elif st.session_state.page == "clientes":
                 # ── Renda Fixa ─────────────────────────────────────────────────
                 n_r = len(rf_c)
                 with st.expander(
-                    f"Renda Fixa   ·   R$ {total_rf_c:,.0f}   ·   {_pct(total_rf_c):.1f}%   ·   {n_r} posição{'ões' if n_r != 1 else ''}",
+                    f"Renda Fixa   ·   R$ {total_rf_c:,.2f}   ·   {_pct(total_rf_c):.1f}% do portfólio   ·   {n_r} posição{'ões' if n_r != 1 else ''}",
                     expanded=False,
                 ):
                     hc = st.columns(COLS_R)
@@ -447,7 +453,7 @@ elif st.session_state.page == "clientes":
                         rc[1].write(idx_rf)
                         rc[2].write(str(p.get("taxa_contratada", "—")))
                         rc[3].write(str(p.get("unidade_taxa", "—")))
-                        rc[4].write(f"R$ {float(p['valor_aplicado']):,.0f}")
+                        rc[4].markdown(f"**R$ {float(p['valor_aplicado']):,.0f}**")
                         rc[5].write(str(p.get("data_inicio", "—")))
                         rc[6].write(str(p.get("data_vencimento", "—")))
                         with rc[7]:
