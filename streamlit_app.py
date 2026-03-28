@@ -90,9 +90,11 @@ elif st.session_state.page == "clientes":
                 st.session_state[key] = "carteira"
 
             col_b1, col_b2, _ = st.columns([3, 3, 4])
-            if col_b1.button("Carteira", key=f"btn_carteira_{nome_cliente}", use_container_width=True):
+            if col_b1.button("Carteira", key=f"btn_carteira_{nome_cliente}", use_container_width=True,
+                             type="primary" if st.session_state[key] == "carteira" else "secondary"):
                 st.session_state[key] = "carteira"
-            if col_b2.button("Resultados", key=f"btn_resultados_{nome_cliente}", use_container_width=True):
+            if col_b2.button("Resultados", key=f"btn_resultados_{nome_cliente}", use_container_width=True,
+                             type="primary" if st.session_state[key] == "resultados" else "secondary"):
                 st.session_state[key] = "resultados"
 
             st.divider()
