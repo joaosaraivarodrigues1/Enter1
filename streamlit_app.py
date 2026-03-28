@@ -3,6 +3,8 @@ import streamlit as st
 import pandas as pd
 import requests as http
 import plotly.graph_objects as go
+import subprocess
+import os
 
 from supabase import create_client
 from postgrest.exceptions import APIError
@@ -762,12 +764,44 @@ border-radius:20px;padding:44px 52px 36px 52px;text-align:center;margin-bottom:8
                             },
                         )
 
-                    # ── Análise — API Rivet ───────────────────────────────────
+                    # ── Recomendação — Rivet ─────────────────────────────────
                     st.divider()
-                    st.subheader("Análise")
-                    with st.container(border=True):
-                        st.caption("Conteúdo gerado pela API Rivet")
-                        st.markdown("*Aguardando integração com a API Rivet...*")
+                    st.subheader("Recomendação")
+
+                    rec_key = f"recomendacao_{cliente_id}_{mes_atual}"
+
+                    col_btn_rec, _ = st.columns([2, 8])
+                    if col_btn_rec.button(
+                        "Gerar recomendação",
+                        key=f"btn_rec_{cliente_id}",
+                        type="primary",
+                        use_container_width=True,
+                        disabled=not mes_atual,
+                    ):
+                        st.session_state[rec_key] = None  # limpa anterior
+                        runner_path = os.path.join(
+                            os.path.dirname(__file__),
+                            "..", "..", "Rivet", "runner.js",
+                        )
+                        with st.spinner("Analisando carteira e gerando recomendação..."):
+                            result = subprocess.run(
+                                ["node", os.path.normpath(runner_path), cliente_id, mes_atual],
+                                capture_output=True,
+                                text=True,
+                                timeout=120,
+                            )
+                        if result.returncode == 0 and result.stdout.strip():
+                            st.session_state[rec_key] = result.stdout.strip()
+                        else:
+                            st.session_state[rec_key] = f"__erro__: {result.stderr.strip()}"
+
+                    recomendacao = st.session_state.get(rec_key)
+                    if recomendacao:
+                        if recomendacao.startswith("__erro__"):
+                            st.error(recomendacao.replace("__erro__: ", ""))
+                        else:
+                            with st.container(border=True):
+                                st.markdown(recomendacao)
 
     with tab_add:
         st.subheader("Novo cliente")
