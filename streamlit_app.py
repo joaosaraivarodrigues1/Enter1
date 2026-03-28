@@ -80,9 +80,24 @@ if st.session_state.page == "home":
 elif st.session_state.page == "clientes":
     st.subheader("Clientes")
 
-    df_clientes = load_table("clientes")
+    # ── Carregar todos os dados uma vez ───────────────────────────────────────
+    df_clientes      = load_table("clientes")
+    df_pos_acoes     = load_table("posicoes_acoes")
+    df_pos_fundos    = load_table("posicoes_fundos")
+    df_pos_rf        = load_table("posicoes_renda_fixa")
+    df_ativos_acoes  = load_table("ativos_acoes")
+    df_precos        = load_table("precos_acoes")
+    df_cotas         = load_table("cotas_fundos")
+    df_mercado       = load_table("dados_mercado")
+
     nomes = df_clientes["nome"].tolist() if not df_clientes.empty else []
     ids   = df_clientes["id"].tolist()   if not df_clientes.empty else []
+
+    # Último e penúltimo mês disponíveis
+    meses_ord = sorted(df_mercado["mes"].unique()) if not df_mercado.empty else []
+    mes_atual = meses_ord[-1] if len(meses_ord) >= 1 else None
+    mes_ant   = meses_ord[-2] if len(meses_ord) >= 2 else None
+    row_merc  = df_mercado[df_mercado["mes"] == mes_atual].iloc[0] if mes_atual else None
 
     tabs_clientes = st.tabs(nomes + ["＋"])
     *tabs_pessoas, tab_add = tabs_clientes
@@ -103,10 +118,161 @@ elif st.session_state.page == "clientes":
 
             st.divider()
 
+            # Posições filtradas por cliente
+            acoes_c  = df_pos_acoes[df_pos_acoes["cliente_id"]   == cliente_id] if not df_pos_acoes.empty  else pd.DataFrame()
+            fundos_c = df_pos_fundos[df_pos_fundos["cliente_id"] == cliente_id] if not df_pos_fundos.empty else pd.DataFrame()
+            rf_c     = df_pos_rf[df_pos_rf["cliente_id"]         == cliente_id] if not df_pos_rf.empty     else pd.DataFrame()
+
+            # ── Carteira ──────────────────────────────────────────────────────
             if st.session_state[key] == "carteira":
-                st.info("Em construção.")
+                rows = []
+                for _, p in acoes_c.iterrows():
+                    nome_at = "—"
+                    if not df_ativos_acoes.empty:
+                        m = df_ativos_acoes[df_ativos_acoes["ticker"] == p["ticker"]]
+                        if not m.empty:
+                            nome_at = m.iloc[0]["nome"]
+                    rows.append({
+                        "Tipo":            "Ação / FII",
+                        "Ativo":           f"{p['ticker']} — {nome_at}",
+                        "Qtd / Cotas":     float(p["quantidade"]),
+                        "Preço médio":     float(p["preco_medio_compra"]),
+                        "Valor investido": float(p["quantidade"]) * float(p["preco_medio_compra"]),
+                        "Data entrada":    p["data_compra"],
+                    })
+                for _, p in fundos_c.iterrows():
+                    rows.append({
+                        "Tipo":            "Fundo",
+                        "Ativo":           p.get("nome", "—"),
+                        "Qtd / Cotas":     float(p["numero_cotas"]),
+                        "Preço médio":     None,
+                        "Valor investido": float(p["valor_aplicado"]),
+                        "Data entrada":    p["data_investimento"],
+                    })
+                for _, p in rf_c.iterrows():
+                    rows.append({
+                        "Tipo":            "Renda Fixa",
+                        "Ativo":           p.get("descricao", "—"),
+                        "Qtd / Cotas":     None,
+                        "Preço médio":     None,
+                        "Valor investido": float(p["valor_aplicado"]),
+                        "Data entrada":    p["data_inicio"],
+                    })
+
+                if rows:
+                    st.dataframe(
+                        pd.DataFrame(rows),
+                        use_container_width=True, hide_index=True,
+                        column_config={
+                            "Preço médio":     st.column_config.NumberColumn(format="R$ %.2f"),
+                            "Valor investido": st.column_config.NumberColumn(format="R$ %.2f"),
+                        },
+                    )
+                else:
+                    st.info("Nenhuma posição cadastrada para este cliente.")
+
+            # ── Resultados ────────────────────────────────────────────────────
             else:
-                st.info("Em construção.")
+                st.caption(f"Mês de referência: **{mes_atual}**" if mes_atual else "Sem dados de mercado.")
+
+                # Tabela de rendimento do portfólio
+                rows_ret = []
+                for _, p in acoes_c.iterrows():
+                    ticker = p["ticker"]
+                    pa_row  = df_precos[(df_precos["ticker"] == ticker) & (df_precos["mes"] == mes_atual)]
+                    pant_row = df_precos[(df_precos["ticker"] == ticker) & (df_precos["mes"] == mes_ant)]
+                    if not pa_row.empty and not pant_row.empty:
+                        pa   = float(pa_row.iloc[0]["preco_fechamento"])
+                        pant = float(pant_row.iloc[0]["preco_fechamento"])
+                        div  = float(pa_row.iloc[0].get("dividendos_pagos", 0) or 0)
+                        ret  = (pa - pant + div) / pant * 100
+                        qtd  = float(p["quantidade"])
+                        rows_ret.append({
+                            "Ativo": ticker, "Tipo": "Ação / FII",
+                            "Retorno mês (%)": ret,
+                            "Variação R$":     (pa - pant + div) * qtd,
+                            "Valor atual":     pa * qtd,
+                        })
+                    else:
+                        rows_ret.append({"Ativo": ticker, "Tipo": "Ação / FII",
+                                         "Retorno mês (%)": None, "Variação R$": None, "Valor atual": None})
+
+                for _, p in fundos_c.iterrows():
+                    cnpj = p["cnpj"]
+                    ca_row   = df_cotas[(df_cotas["cnpj"] == cnpj) & (df_cotas["mes"] == mes_atual)]
+                    cant_row = df_cotas[(df_cotas["cnpj"] == cnpj) & (df_cotas["mes"] == mes_ant)]
+                    if not ca_row.empty and not cant_row.empty:
+                        ca   = float(ca_row.iloc[0]["cota_fechamento"])
+                        cant = float(cant_row.iloc[0]["cota_fechamento"])
+                        ret  = (ca - cant) / cant * 100
+                        cotas = float(p["numero_cotas"])
+                        rows_ret.append({
+                            "Ativo": p.get("nome", cnpj), "Tipo": "Fundo",
+                            "Retorno mês (%)": ret,
+                            "Variação R$":     cotas * (ca - cant),
+                            "Valor atual":     cotas * ca,
+                        })
+                    else:
+                        rows_ret.append({"Ativo": p.get("nome", cnpj), "Tipo": "Fundo",
+                                         "Retorno mês (%)": None, "Variação R$": None, "Valor atual": None})
+
+                for _, p in rf_c.iterrows():
+                    ret, val = None, float(p.get("valor_aplicado", 0) or 0)
+                    if row_merc is not None:
+                        idx  = p.get("indexacao", "")
+                        taxa = float(p.get("taxa_contratada", 0) or 0)
+                        if idx == "pos_fixado_cdi":
+                            ret = float(row_merc.get("cdi_mensal", 0) or 0) * (taxa / 100)
+                        elif idx == "pos_fixado_selic":
+                            ret = float(row_merc.get("selic_mensal", 0) or 0) * (taxa / 100)
+                        elif idx == "prefixado":
+                            ret = ((1 + taxa / 100) ** (1 / 12) - 1) * 100
+                        elif idx == "ipca_mais":
+                            ipca = float(row_merc.get("ipca_mensal", 0) or 0) / 100
+                            spread_m = (1 + taxa / 100) ** (1 / 12) - 1
+                            ret = ((1 + ipca) * (1 + spread_m) - 1) * 100
+                    rows_ret.append({
+                        "Ativo": p.get("descricao", "—"), "Tipo": "Renda Fixa",
+                        "Retorno mês (%)": ret,
+                        "Variação R$":     val * ret / 100 if ret is not None else None,
+                        "Valor atual":     val * (1 + ret / 100) if ret is not None else val,
+                    })
+
+                if rows_ret:
+                    st.dataframe(
+                        pd.DataFrame(rows_ret),
+                        use_container_width=True, hide_index=True,
+                        column_config={
+                            "Retorno mês (%)": st.column_config.NumberColumn(format="%.2f%%"),
+                            "Variação R$":     st.column_config.NumberColumn(format="R$ %.2f"),
+                            "Valor atual":     st.column_config.NumberColumn(format="R$ %.2f"),
+                        },
+                    )
+                else:
+                    st.info("Nenhuma posição cadastrada para este cliente.")
+
+                # Benchmarks
+                st.subheader("Benchmarks")
+                if row_merc is not None:
+                    st.dataframe(pd.DataFrame({
+                        "Indicador":       ["CDI", "IPCA", "Selic", "Ibovespa", "IMA-B"],
+                        "Retorno mês (%)": [
+                            row_merc.get("cdi_mensal"),
+                            row_merc.get("ipca_mensal"),
+                            row_merc.get("selic_mensal"),
+                            row_merc.get("ibovespa_retorno_mensal"),
+                            row_merc.get("ima_b_retorno_mensal"),
+                        ],
+                    }), use_container_width=True, hide_index=True,
+                    column_config={"Retorno mês (%)": st.column_config.NumberColumn(format="%.4f%%")})
+                else:
+                    st.info("Sem dados de benchmarks.")
+
+                # Análise — API Revit
+                st.subheader("Análise")
+                with st.container(border=True):
+                    st.caption("Conteúdo gerado pela API Revit")
+                    st.markdown("*Aguardando integração com a API Revit...*")
 
     with tab_add:
         st.subheader("Novo cliente")
