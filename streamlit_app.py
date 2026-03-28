@@ -318,31 +318,27 @@ elif st.session_state.page == "clientes":
                         if df_ativos_acoes.empty:
                             st.warning("Nenhuma ação cadastrada em Ativos Disponíveis.")
                         else:
-                            opcoes_a = {row["ticker"]: f"{row['ticker']} — {row.get('nome', row['ticker'])}"
+                            opcoes_a = {row["ticker"]: row.get("nome", row["ticker"])
                                         for _, row in df_ativos_acoes.iterrows()}
-                            ac = st.columns([4, 1.5, 3, 1])
+                            ac = st.columns(COLS_A)
                             with ac[0]:
-                                tk_sel = st.selectbox("Ativo", options=list(opcoes_a.keys()),
-                                    format_func=lambda x: opcoes_a[x],
+                                tk_sel = st.selectbox("Ticker", options=list(opcoes_a.keys()),
                                     key=f"na_tk_{cliente_id}", label_visibility="collapsed")
-                            with ac[1]:
+                            ac[1].markdown(opcoes_a.get(tk_sel, "—"))
+                            with ac[2]:
                                 qtd_str = st.text_input("Qtd", key=f"na_qtd_{cliente_id}",
-                                    label_visibility="collapsed", placeholder="Quantidade")
+                                    label_visibility="collapsed", placeholder="Qtd")
                             try:
                                 qtd_v = float(qtd_str.replace(",", ".")) if qtd_str.strip() else 0.0
                             except ValueError:
                                 qtd_v = 0.0
                             pa_r = df_precos[(df_precos["ticker"] == tk_sel) & (df_precos["mes"] == mes_atual)] if mes_atual and tk_sel else pd.DataFrame()
                             preco_at = float(pa_r.iloc[0]["preco_fechamento"]) if not pa_r.empty else None
-                            with ac[2]:
-                                if preco_at is not None and qtd_v > 0:
-                                    st.markdown(f"Preço: R$ {preco_at:,.2f} &nbsp;·&nbsp; Total: **R$ {preco_at * qtd_v:,.0f}**", unsafe_allow_html=True)
-                                elif preco_at is not None:
-                                    st.caption(f"Preço em {mes_atual}: R$ {preco_at:,.2f}")
-                                else:
-                                    st.caption("Sem preço para o mês selecionado")
+                            total_ac = preco_at * qtd_v if (preco_at and qtd_v > 0) else None
+                            ac[3].markdown(f"R$ {preco_at:,.2f}" if preco_at else "—")
+                            ac[4].markdown(f"**R$ {total_ac:,.0f}**" if total_ac else "—")
                             all_a = bool(tk_sel) and qtd_v > 0 and preco_at is not None
-                            with ac[3]:
+                            with ac[9]:
                                 if st.button("Salvar", key=f"save_a_{cliente_id}", type="primary", disabled=not all_a, use_container_width=True):
                                     data_compra = (mes_atual + "-01") if mes_atual else pd.Timestamp.today().strftime("%Y-%m-%d")
                                     get_supabase().table("posicoes_acoes").insert({
@@ -403,14 +399,15 @@ elif st.session_state.page == "clientes":
                             st.warning("Nenhum fundo cadastrado em Ativos Disponíveis.")
                         else:
                             opcoes_f = {row["cnpj"]: row["nome"] for _, row in df_ativos_fundos.iterrows()}
-                            fc = st.columns([4, 1.5, 3, 1])
+                            fc = st.columns(COLS_F)
                             with fc[0]:
                                 cnpj_sel = st.selectbox("Fundo", options=list(opcoes_f.keys()),
                                     format_func=lambda x: opcoes_f[x],
                                     key=f"nf_cnpj_{cliente_id}", label_visibility="collapsed")
-                            with fc[1]:
+                            fc[1].markdown(cnpj_sel or "—")
+                            with fc[2]:
                                 cotas_str = st.text_input("Cotas", key=f"nf_cotas_{cliente_id}",
-                                    label_visibility="collapsed", placeholder="Nº de cotas")
+                                    label_visibility="collapsed", placeholder="Nº cotas")
                             try:
                                 cotas_v = float(cotas_str.replace(",", ".")) if cotas_str.strip() else 0.0
                             except ValueError:
@@ -418,15 +415,10 @@ elif st.session_state.page == "clientes":
                             ca_r = df_cotas[(df_cotas["cnpj"] == cnpj_sel) & (df_cotas["mes"] == mes_atual)] if mes_atual and cnpj_sel else pd.DataFrame()
                             cota_at = float(ca_r.iloc[0]["cota_fechamento"]) if not ca_r.empty else None
                             vaplic_calc = cotas_v * cota_at if (cota_at and cotas_v > 0) else None
-                            with fc[2]:
-                                if cota_at is not None and cotas_v > 0:
-                                    st.markdown(f"Cota: R$ {cota_at:,.4f} &nbsp;·&nbsp; Total: **R$ {vaplic_calc:,.0f}**", unsafe_allow_html=True)
-                                elif cota_at is not None:
-                                    st.caption(f"Cota em {mes_atual}: R$ {cota_at:,.4f}")
-                                else:
-                                    st.caption("Sem cota para o mês selecionado")
+                            fc[3].markdown(f"**R$ {vaplic_calc:,.0f}**" if vaplic_calc else "—")
+                            fc[4].markdown(f"R$ {cota_at:,.4f}" if cota_at else "—")
                             all_f = cotas_v > 0 and cota_at is not None
-                            with fc[3]:
+                            with fc[8]:
                                 if st.button("Salvar", key=f"save_f_{cliente_id}", type="primary", disabled=not all_f, use_container_width=True):
                                     data_inv = (mes_atual + "-01") if mes_atual else pd.Timestamp.today().strftime("%Y-%m-%d")
                                     get_supabase().table("posicoes_fundos").insert({
