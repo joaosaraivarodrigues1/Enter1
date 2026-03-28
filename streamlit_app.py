@@ -1097,11 +1097,16 @@ elif st.session_state.page == "indice_mercado":
     if df.empty:
         st.info("Nenhum dado encontrado. Clique em Atualizar para buscar os índices.")
     else:
-        INDICES = {
+        INDICES_PCT = {
             "cdi_mensal":              "CDI",
             "ipca_mensal":             "IPCA",
             "selic_mensal":            "Selic",
             "ibovespa_retorno_mensal": "IBOVESPA",
+            "ima_b_retorno_mensal":    "IMA-B",
+            "pib_crescimento_anual":   "PIB (YoY)",
+        }
+        INDICES_FX = {
+            "usd_brl_fechamento": "USD/BRL",
         }
 
         df_sorted = df.sort_values("mes").reset_index(drop=True)
@@ -1114,7 +1119,7 @@ elif st.session_state.page == "indice_mercado":
             mes_label = pd.to_datetime(ultimo["mes"] + "-01").strftime("%b/%Y")
             st.caption(f"Último mês disponível: **{mes_label}**")
 
-            for campo, label in INDICES.items():
+            for campo, label in INDICES_PCT.items():
                 val = ultimo.get(campo)
                 texto = f"{val:.2f}%" if pd.notna(val) else "—"
                 st.markdown(
@@ -1126,51 +1131,74 @@ elif st.session_state.page == "indice_mercado":
                     """,
                     unsafe_allow_html=True,
                 )
+            for campo, label in INDICES_FX.items():
+                val = ultimo.get(campo)
+                texto = f"R$ {val:.4f}" if pd.notna(val) else "—"
+                st.markdown(
+                    f"""
+                    <div style="padding:22px 0 14px 0; border-bottom:1px solid #333;">
+                        <div style="font-size:22px; color:#aaa; font-weight:500; margin-bottom:4px;">{label}</div>
+                        <div style="font-size:84px; font-weight:700; line-height:1.0;">{texto}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
-        # ── Direita: gráfico histórico 5 anos ────────────────────────────────
+        # ── Direita: gráficos históricos ──────────────────────────────────────
         with col_dir:
-            df_chart = df_sorted[["mes"] + list(INDICES.keys())].copy()
+            BG = "#0e1117"
+
+            # Gráfico 1 — Índices em % (CDI, IPCA, Selic, IBOV, IMA-B, PIB)
+            df_chart = df_sorted[["mes"] + list(INDICES_PCT.keys())].copy()
             df_chart["mes"] = pd.to_datetime(df_chart["mes"] + "-01")
 
-            CORES = ["#ffffff", "#7dd3fc", "#86efac", "#fda4af"]
+            CORES_PCT = ["#ffffff", "#7dd3fc", "#86efac", "#fda4af", "#fbbf24", "#c084fc"]
 
             fig = go.Figure()
-            for (campo, label), cor in zip(INDICES.items(), CORES):
+            for (campo, label), cor in zip(INDICES_PCT.items(), CORES_PCT):
                 serie = df_chart[["mes", campo]].dropna()
                 fig.add_trace(go.Scatter(
-                    x=serie["mes"],
-                    y=serie[campo],
-                    name=label,
-                    mode="lines",
+                    x=serie["mes"], y=serie[campo],
+                    name=label, mode="lines",
                     line=dict(width=2.5, color=cor),
                 ))
 
-            BG = "#0e1117"
             fig.update_layout(
-                height=720,
+                height=420,
                 margin=dict(t=20, b=20, l=0, r=10),
-                plot_bgcolor=BG,
-                paper_bgcolor=BG,
+                plot_bgcolor=BG, paper_bgcolor=BG,
                 font=dict(color="#ffffff", size=14),
-                legend=dict(
-                    orientation="h", y=-0.06,
-                    font=dict(size=14, color="#ffffff"),
-                ),
-                xaxis=dict(
-                    showgrid=False,
-                    tickfont=dict(size=13, color="#aaaaaa"),
-                    linecolor="#333",
-                ),
-                yaxis=dict(
-                    ticksuffix="%",
-                    autorange=True,
-                    showgrid=True,
-                    gridcolor="#1f2937",
-                    tickfont=dict(size=13, color="#aaaaaa"),
-                    linecolor="#333",
-                ),
+                legend=dict(orientation="h", y=-0.12, font=dict(size=13, color="#ffffff")),
+                xaxis=dict(showgrid=False, tickfont=dict(size=12, color="#aaaaaa"), linecolor="#333"),
+                yaxis=dict(ticksuffix="%", autorange=True, showgrid=True,
+                           gridcolor="#1f2937", tickfont=dict(size=12, color="#aaaaaa"), linecolor="#333"),
                 hovermode="x unified",
                 hoverlabel=dict(bgcolor="#1f2937", font_color="#ffffff"),
             )
-
             st.plotly_chart(fig, use_container_width=True)
+
+            # Gráfico 2 — USD/BRL
+            df_fx = df_sorted[["mes", "usd_brl_fechamento"]].copy()
+            df_fx["mes"] = pd.to_datetime(df_fx["mes"] + "-01")
+            df_fx = df_fx.dropna()
+
+            fig_fx = go.Figure()
+            fig_fx.add_trace(go.Scatter(
+                x=df_fx["mes"], y=df_fx["usd_brl_fechamento"],
+                name="USD/BRL", mode="lines",
+                line=dict(width=2.5, color="#34d399"),
+                fill="tozeroy", fillcolor="rgba(52,211,153,0.08)",
+            ))
+            fig_fx.update_layout(
+                height=280,
+                margin=dict(t=10, b=20, l=0, r=10),
+                plot_bgcolor=BG, paper_bgcolor=BG,
+                font=dict(color="#ffffff", size=14),
+                legend=dict(orientation="h", y=-0.18, font=dict(size=13, color="#ffffff")),
+                xaxis=dict(showgrid=False, tickfont=dict(size=12, color="#aaaaaa"), linecolor="#333"),
+                yaxis=dict(tickprefix="R$ ", autorange=True, showgrid=True,
+                           gridcolor="#1f2937", tickfont=dict(size=12, color="#aaaaaa"), linecolor="#333"),
+                hovermode="x unified",
+                hoverlabel=dict(bgcolor="#1f2937", font_color="#ffffff"),
+            )
+            st.plotly_chart(fig_fx, use_container_width=True)
