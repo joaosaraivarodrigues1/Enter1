@@ -154,7 +154,10 @@ elif st.session_state.page == "clientes":
             if key not in st.session_state:
                 st.session_state[key] = "carteira"
 
-            col_b1, col_b2, _ = st.columns([3, 3, 4])
+            col_b0, col_b1, col_b2, _ = st.columns([3, 3, 3, 1])
+            if col_b0.button("Dados Pessoais", key=f"btn_dados_{cliente_id}", use_container_width=True,
+                             type="primary" if st.session_state[key] == "dados" else "secondary"):
+                st.session_state[key] = "dados"
             if col_b1.button("Carteira", key=f"btn_carteira_{cliente_id}", use_container_width=True,
                              type="primary" if st.session_state[key] == "carteira" else "secondary"):
                 st.session_state[key] = "carteira"
@@ -169,8 +172,59 @@ elif st.session_state.page == "clientes":
             fundos_c = df_pos_fundos[df_pos_fundos["cliente_id"] == cliente_id] if not df_pos_fundos.empty else pd.DataFrame()
             rf_c     = df_pos_rf[df_pos_rf["cliente_id"]         == cliente_id] if not df_pos_rf.empty     else pd.DataFrame()
 
+            # ── Dados Pessoais ────────────────────────────────────────────────
+            if st.session_state[key] == "dados":
+                row_cli = df_clientes[df_clientes["id"] == cliente_id].iloc[0]
+                perfil_texto = row_cli.get("perfil_de_risco", "") or ""
+
+                if perfil_texto:
+                    # Extrai a linha de classificação para o badge
+                    linhas = perfil_texto.splitlines()
+                    classificacao = next(
+                        (l.replace("Classificação do Perfil de Investimento:", "").strip()
+                         for l in linhas if "Classificação" in l),
+                        "—"
+                    )
+                    CORES_PERFIL = {
+                        "Conservador": "#22c55e",
+                        "Moderado":    "#3b82f6",
+                        "Arrojado":    "#f97316",
+                        "Agressivo":   "#ef4444",
+                    }
+                    cor = CORES_PERFIL.get(classificacao, "#6b7280")
+                    st.markdown(
+                        f'<span style="background:{cor};color:#fff;padding:4px 14px;'
+                        f'border-radius:20px;font-size:14px;font-weight:600;">'
+                        f'{classificacao}</span>',
+                        unsafe_allow_html=True,
+                    )
+                    st.write("")
+                    # Renderiza o texto seção a seção
+                    secao_atual = []
+                    for linha in linhas[2:]:  # pula nome e classificação
+                        if linha.strip().startswith(("1.", "2.", "3.")):
+                            if secao_atual:
+                                st.markdown(" ".join(secao_atual))
+                                secao_atual = []
+                            st.markdown(f"**{linha.strip()}**")
+                        elif linha.strip().startswith(("a.", "b.", "c.", "d.")):
+                            if secao_atual:
+                                st.markdown(" ".join(secao_atual))
+                                secao_atual = []
+                            st.markdown(f"*{linha.strip()}*")
+                        elif linha.strip():
+                            secao_atual.append(linha.strip())
+                        else:
+                            if secao_atual:
+                                st.markdown(" ".join(secao_atual))
+                                secao_atual = []
+                    if secao_atual:
+                        st.markdown(" ".join(secao_atual))
+                else:
+                    st.info("Perfil de risco não cadastrado para este cliente.")
+
             # ── Carteira ──────────────────────────────────────────────────────
-            if st.session_state[key] == "carteira":
+            elif st.session_state[key] == "carteira":
                 rows = []
                 for _, p in acoes_c.iterrows():
                     nome_at = "—"
@@ -228,7 +282,7 @@ elif st.session_state.page == "clientes":
                     st.info("Nenhuma posição cadastrada para este cliente.")
 
             # ── Resultados ────────────────────────────────────────────────────
-            else:
+            elif st.session_state[key] == "resultados":
                 st.caption(f"Mês de referência: **{mes_atual}**" if mes_atual else "Sem dados de mercado.")
 
                 # Tabela de rendimento do portfólio
