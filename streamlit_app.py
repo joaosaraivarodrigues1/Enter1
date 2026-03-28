@@ -80,20 +80,24 @@ if st.session_state.page == "home":
 elif st.session_state.page == "clientes":
     st.subheader("Clientes")
 
-    clientes = ["Albert", "Beatriz", "Carlos", "Diana", "Eduardo", "Fernanda", "Gustavo", "Helena"]
-    tabs_clientes = st.tabs(clientes)
+    df_clientes = load_table("clientes")
+    nomes = df_clientes["nome"].tolist() if not df_clientes.empty else []
+    ids   = df_clientes["id"].tolist()   if not df_clientes.empty else []
 
-    for tab, nome_cliente in zip(tabs_clientes, clientes):
+    tabs_clientes = st.tabs(nomes + ["＋"])
+    *tabs_pessoas, tab_add = tabs_clientes
+
+    for tab, nome_cliente, cliente_id in zip(tabs_pessoas, nomes, ids):
         with tab:
-            key = f"subpage_{nome_cliente}"
+            key = f"subpage_{cliente_id}"
             if key not in st.session_state:
                 st.session_state[key] = "carteira"
 
             col_b1, col_b2, _ = st.columns([3, 3, 4])
-            if col_b1.button("Carteira", key=f"btn_carteira_{nome_cliente}", use_container_width=True,
+            if col_b1.button("Carteira", key=f"btn_carteira_{cliente_id}", use_container_width=True,
                              type="primary" if st.session_state[key] == "carteira" else "secondary"):
                 st.session_state[key] = "carteira"
-            if col_b2.button("Resultados", key=f"btn_resultados_{nome_cliente}", use_container_width=True,
+            if col_b2.button("Resultados", key=f"btn_resultados_{cliente_id}", use_container_width=True,
                              type="primary" if st.session_state[key] == "resultados" else "secondary"):
                 st.session_state[key] = "resultados"
 
@@ -103,6 +107,23 @@ elif st.session_state.page == "clientes":
                 st.info("Em construção.")
             else:
                 st.info("Em construção.")
+
+    with tab_add:
+        st.subheader("Novo cliente")
+        with st.form("form_add_cliente"):
+            novo_nome = st.text_input("Nome")
+            submit = st.form_submit_button("Criar cliente", type="primary")
+            if submit:
+                if not novo_nome.strip():
+                    st.error("Preencha o nome.")
+                else:
+                    try:
+                        get_supabase().table("clientes").insert({"nome": novo_nome.strip()}).execute()
+                        st.cache_data.clear()
+                        st.success(f"Cliente **{novo_nome.strip()}** criado.")
+                        st.rerun()
+                    except APIError as e:
+                        st.error(f"Erro: {e}")
 
 elif st.session_state.page == "ativos":
     st.subheader("Ativos Disponíveis")
