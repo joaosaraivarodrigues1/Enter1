@@ -194,7 +194,7 @@ elif st.session_state.page == "clientes":
                     cor_badge, cor_bg = CORES_PERFIL.get(classificacao, ("#6b7280", "#1a1f2e"))
 
                     # ── Cabeçalho ──────────────────────────────────────────────
-                    _, card_col, _ = st.columns([0.5, 9, 0.5])
+                    _, card_col, _ = st.columns([3, 4, 3])
                     with card_col:
                         st.markdown(f"""
 <div style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.09);
@@ -241,7 +241,7 @@ border-radius:20px;padding:44px 52px 36px 52px;text-align:center;margin-bottom:8
                     if buf and secoes:
                         secoes[-1][1].append((sub_titulo, " ".join(buf)))
 
-                    _, body_col, _ = st.columns([0.5, 9, 0.5])
+                    _, body_col, _ = st.columns([3, 4, 3])
                     with body_col:
                         for sec_t, items in secoes:
                             st.markdown(f"""
