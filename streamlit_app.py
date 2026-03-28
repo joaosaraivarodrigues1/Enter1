@@ -85,10 +85,21 @@ elif st.session_state.page == "clientes":
 
     for tab, nome_cliente in zip(tabs_clientes, clientes):
         with tab:
-            sub_carteira, sub_resultados = st.tabs(["Carteira", "Resultados"])
-            with sub_carteira:
+            key = f"subpage_{nome_cliente}"
+            if key not in st.session_state:
+                st.session_state[key] = "carteira"
+
+            col_b1, col_b2, _ = st.columns([3, 3, 4])
+            if col_b1.button("Carteira", key=f"btn_carteira_{nome_cliente}", use_container_width=True):
+                st.session_state[key] = "carteira"
+            if col_b2.button("Resultados", key=f"btn_resultados_{nome_cliente}", use_container_width=True):
+                st.session_state[key] = "resultados"
+
+            st.divider()
+
+            if st.session_state[key] == "carteira":
                 st.info("Em construção.")
-            with sub_resultados:
+            else:
                 st.info("Em construção.")
 
 elif st.session_state.page == "ativos":
