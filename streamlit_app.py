@@ -110,6 +110,7 @@ elif st.session_state.page == "ativos":
 
     with st.form("form_add_ativo"):
         if tipo == "Ação / FII":
+            tipo_ativo = st.selectbox("Tipo", ["Ação", "FII"])
             ticker = st.text_input("Ticker", placeholder="ex: PETR4").upper().strip()
             nome   = st.text_input("Nome da empresa", placeholder="ex: Petrobras")
             submit = st.form_submit_button("Adicionar", type="primary")
@@ -120,7 +121,7 @@ elif st.session_state.page == "ativos":
                 else:
                     # Etapa 1: inserir no catálogo
                     try:
-                        get_supabase().table("ativos_acoes").insert({"ticker": ticker, "nome": nome}).execute()
+                        get_supabase().table("ativos_acoes").insert({"ticker": ticker, "nome": nome, "tipo": tipo_ativo}).execute()
                     except APIError as e:
                         if "23505" in str(e):
                             st.error(f"O ticker **{ticker}** já está cadastrado no banco de dados.")
@@ -163,15 +164,16 @@ elif st.session_state.page == "ativos":
                             s.update(label=f"{ticker} cadastrado (preços pendentes)", state="error")
 
         elif tipo == "Fundo":
-            cnpj = st.text_input("CNPJ", placeholder="ex: 12.345.678/0001-90").strip()
-            nome = st.text_input("Nome do fundo", placeholder="ex: Riza Lotus Plus")
-            submit = st.form_submit_button("Adicionar", type="primary")
+            cnpj      = st.text_input("CNPJ", placeholder="ex: 12.345.678/0001-90").strip()
+            nome      = st.text_input("Nome do fundo", placeholder="ex: Riza Lotus Plus")
+            categoria = st.selectbox("Categoria", ["RF DI", "RF Simples", "Multimercado RF", "Multimercado", "Long Biased", "FIA"])
+            submit    = st.form_submit_button("Adicionar", type="primary")
 
             if submit:
                 if not cnpj or not nome:
                     st.error("Preencha CNPJ e nome.")
                 else:
-                    res = get_supabase().table("ativos_fundos").insert({"cnpj": cnpj, "nome": nome}).execute()
+                    res = get_supabase().table("ativos_fundos").insert({"cnpj": cnpj, "nome": nome, "categoria": categoria}).execute()
                     if res.data:
                         st.success(f"{nome} adicionado.")
                         st.cache_data.clear()
