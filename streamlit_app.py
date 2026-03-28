@@ -97,23 +97,77 @@ st.divider()
 # ── Páginas ───────────────────────────────────────────────────────────────────
 
 if st.session_state.page == "home":
-    st.subheader("Sobre o projeto")
-    st.markdown("""
-    **Enter** é uma plataforma de análise de portfólio e rendimentos para carteiras de investimento.
+    st.markdown("## Plataforma de Gestão de Portfólios")
+    st.markdown(
+        "Solução integrada para **calcular rendimentos**, comparar performance com benchmarks de mercado "
+        "e gerar **recomendações personalizadas** para cada cliente, com base no perfil de risco e na composição atual da carteira."
+    )
 
-    O sistema consolida dados de ações, fundos de investimento e renda fixa, cruza com índices de
-    mercado (CDI, IPCA, Selic, IBOVESPA) e produz análises de performance e recomendações.
+    st.divider()
 
-    **Fontes de dados**
-    - Ações e FIIs: brapi.dev (preços mensais e dividendos)
-    - Fundos: CVM — Informe Diário (arquivos locais)
-    - Índices: BCB API (CDI, IPCA, Selic) e brapi.dev (IBOVESPA)
+    col1, col2, col3 = st.columns(3)
 
-    **Banco de dados**
-    - `ativos_acoes` / `ativos_fundos` — catálogo de ativos disponíveis
-    - `posicoes_acoes` / `posicoes_fundos` / `posicoes_renda_fixa` — carteira por cliente
-    - `precos_acoes` / `cotas_fundos` / `dados_mercado` — série histórica mensal
-    """)
+    with col1:
+        st.markdown("#### Cálculo de Rendimentos")
+        st.markdown("""
+Consolida automaticamente todas as posições do cliente — **ações, FIIs, fundos e renda fixa** —
+e calcula o retorno mensal e acumulado de cada ativo.
+
+Os resultados são comparados com os principais benchmarks:
+
+| Benchmark | Descrição |
+|-----------|-----------|
+| CDI | Referência de renda fixa |
+| IPCA | Inflação oficial |
+| Selic | Taxa básica de juros |
+| IBOVESPA | Referência de renda variável |
+
+Assim é possível identificar quais ativos superam o mercado e quais estão abaixo do esperado para o perfil do cliente.
+""")
+
+    with col2:
+        st.markdown("#### Recomendações por Cliente")
+        st.markdown("""
+Com base no **perfil de risco** (conservador, moderado ou agressivo) e na distribuição atual da carteira,
+o sistema identifica oportunidades de rebalanceamento.
+
+O fluxo de análise segue três etapas:
+
+1. **Diagnóstico** — leitura da carteira atual e cálculo de exposição por classe de ativo
+2. **Comparação** — performance vs. benchmarks no mês selecionado
+3. **Recomendação** — sugestão de ativos disponíveis no catálogo alinhados ao perfil
+
+As recomendações são geradas por uma Edge Function que combina os dados de mercado com as posições do cliente.
+""")
+
+    with col3:
+        st.markdown("#### Estrutura de Dados")
+        st.markdown("""
+Os dados são coletados de fontes públicas e armazenados no **Supabase** com atualização mensal.
+
+**Catálogo de ativos**
+- `ativos_acoes` / `ativos_fundos` / `ativos_renda_fixa`
+
+**Posições por cliente**
+- `posicoes_acoes` / `posicoes_fundos` / `posicoes_renda_fixa`
+
+**Série histórica**
+- `precos_acoes` — preços mensais via brapi.dev
+- `cotas_fundos` — cotas mensais via CVM (Informe Diário)
+- `dados_mercado` — CDI, IPCA, Selic, IBOVESPA via BCB API e brapi.dev
+
+**Clientes**
+- `clientes` — perfil de risco e dados cadastrais
+""")
+
+    st.divider()
+
+    st.markdown("#### Como usar")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.info("**1. Selecione o período**\n\nUse o botão de data no menu para escolher o mês de referência da análise.")
+    c2.info("**2. Acesse Clientes**\n\nEscolha um cliente para ver a carteira consolidada, os rendimentos mensais e as recomendações geradas.")
+    c3.info("**3. Explore Ativos**\n\nConsulte o catálogo completo de ações, FIIs e fundos disponíveis para alocação.")
+    c4.info("**4. Acompanhe o Mercado**\n\nVeja a evolução dos benchmarks no tempo e entenda o contexto macro de cada período.")
 
 elif st.session_state.page == "clientes":
     st.subheader("Clientes")
