@@ -185,7 +185,7 @@ elif st.session_state.page == "ativos":
         elif tipo == "Renda Fixa":
             nome        = st.text_input("Nome do instrumento", placeholder="ex: CDB BTG 110% CDI")
             instrumento = st.selectbox("Instrumento", ["CDB", "LCI", "LCA", "Tesouro Direto", "Debênture"])
-            indexacao   = st.selectbox("Indexação", ["pos_fixado", "prefixado", "ipca_mais"])
+            indexacao   = st.selectbox("Indexação", ["pos_fixado_cdi", "pos_fixado_selic", "prefixado", "ipca_mais"])
             isento_ir   = st.checkbox("Isento de IR")
             emissor     = st.text_input("Emissor", placeholder="ex: BTG Pactual (opcional)")
             submit      = st.form_submit_button("Adicionar", type="primary")
