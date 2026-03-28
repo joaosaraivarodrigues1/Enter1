@@ -83,6 +83,7 @@ elif st.session_state.page == "banco_de_dados":
     tabelas = [
         "ativos_acoes",
         "ativos_fundos",
+        "ativos_renda_fixa",
         "clientes",
         "posicoes_acoes",
         "posicoes_fundos",
@@ -137,7 +138,7 @@ elif st.session_state.page == "ativos":
                         bar = st.progress(0, text="Importando preços históricos...")
 
                         try:
-                            bar.progress(15, text="Conectando ao Yahoo Finance...")
+                            bar.progress(15, text="Conectando ao brapi.dev...")
                             resp = http.post(
                                 f"{functions_url()}/fetch-acoes",
                                 headers={**auth_header(), "Content-Type": "application/json"},
@@ -180,42 +181,32 @@ elif st.session_state.page == "ativos":
                         st.error(f"Erro: {res}")
 
         elif tipo == "Renda Fixa":
-            descricao     = st.text_input("Descrição", placeholder="ex: CDB C6")
-            instrumento   = st.selectbox("Instrumento", ["CDB", "LCI", "LCA", "tesouro_direto", "debenture"])
-            indexacao     = st.selectbox("Indexação", ["pos_fixado", "prefixado", "ipca_mais"])
-            taxa          = st.number_input("Taxa contratada", min_value=0.0, format="%.4f")
-            unidade_taxa  = st.selectbox("Unidade da taxa", ["percentual_cdi", "percentual_selic", "percentual_ao_ano", "spread_ao_ano"])
-            valor         = st.number_input("Valor aplicado (R$)", min_value=0.0, format="%.2f")
-            cliente_id    = st.text_input("ID do cliente (uuid)")
-            data_inicio   = st.date_input("Data de início")
-            data_venc     = st.date_input("Data de vencimento")
-            isento_ir     = st.checkbox("Isento de IR")
-            emissor       = st.text_input("Emissor (somente debêntures)", placeholder="opcional")
-            submit        = st.form_submit_button("Adicionar", type="primary")
+            nome        = st.text_input("Nome do instrumento", placeholder="ex: CDB BTG 110% CDI")
+            instrumento = st.selectbox("Instrumento", ["CDB", "LCI", "LCA", "Tesouro Direto", "Debênture"])
+            indexacao   = st.selectbox("Indexação", ["pos_fixado", "prefixado", "ipca_mais"])
+            isento_ir   = st.checkbox("Isento de IR")
+            emissor     = st.text_input("Emissor", placeholder="ex: BTG Pactual (opcional)")
+            submit      = st.form_submit_button("Adicionar", type="primary")
 
             if submit:
-                if not descricao or not cliente_id:
-                    st.error("Preencha ao menos descrição e ID do cliente.")
+                if not nome:
+                    st.error("Preencha o nome do instrumento.")
                 else:
-                    payload = {
-                        "cliente_id":     cliente_id.strip(),
-                        "descricao":      descricao,
-                        "instrumento":    instrumento,
-                        "indexacao":      indexacao,
-                        "taxa_contratada": taxa,
-                        "unidade_taxa":   unidade_taxa,
-                        "valor_aplicado": valor,
-                        "data_inicio":    str(data_inicio),
-                        "data_vencimento": str(data_venc),
-                        "isento_ir":      isento_ir,
-                        "emissor":        emissor or None,
-                    }
-                    res = get_supabase().table("posicoes_renda_fixa").insert(payload).execute()
-                    if res.data:
-                        st.success(f"{descricao} adicionado com sucesso.")
+                    try:
+                        get_supabase().table("ativos_renda_fixa").insert({
+                            "nome":        nome,
+                            "instrumento": instrumento,
+                            "indexacao":   indexacao,
+                            "isento_ir":   isento_ir,
+                            "emissor":     emissor or None,
+                        }).execute()
+                        st.success(f"**{nome}** adicionado ao catálogo.")
                         st.cache_data.clear()
-                    else:
-                        st.error(f"Erro: {res}")
+                    except APIError as e:
+                        if "23505" in str(e):
+                            st.error(f"O instrumento **{nome}** já está cadastrado.")
+                        else:
+                            st.error(f"Erro ao cadastrar: {e}")
 
 elif st.session_state.page == "indice_mercado":
     col_title, col_btn = st.columns([5, 1])
