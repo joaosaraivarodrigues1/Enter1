@@ -3,7 +3,6 @@ import streamlit as st
 import pandas as pd
 import requests as http
 import plotly.graph_objects as go
-from openai import OpenAI
 
 from supabase import create_client
 from postgrest.exceptions import APIError
@@ -45,77 +44,19 @@ def functions_url():
 def auth_header():
     return {"Authorization": f"Bearer {st.secrets['SUPABASE_KEY'].strip()}"}
 
+RIVET_SERVER_URL = "http://localhost:3000"
+
 def gerar_recomendacao(cliente_id: str, mes: str) -> str:
-    sb = get_supabase()
-
-    cliente = sb.table("clientes").select("nome, perfil_de_risco").eq("id", cliente_id).single().execute().data
-    perfil  = f"Nome: {cliente['nome']}\nPerfil de risco: {cliente['perfil_de_risco']}"
-
-    acoes  = sb.table("posicoes_acoes").select("ticker, quantidade, preco_medio_compra, ativos_acoes(nome)").eq("cliente_id", cliente_id).execute().data or []
-    fundos = sb.table("posicoes_fundos").select("numero_cotas, valor_aplicado, ativos_fundos(nome, categoria)").eq("cliente_id", cliente_id).execute().data or []
-    rf     = sb.table("posicoes_renda_fixa").select("taxa_contratada, unidade_taxa, valor_aplicado, data_vencimento, ativos_renda_fixa(nome, indexacao)").eq("cliente_id", cliente_id).execute().data or []
-
-    carteira = ""
-    if acoes:
-        carteira += "=== AÇÕES E FIIs ===\n"
-        for p in acoes:
-            carteira += f"{p['ativos_acoes']['nome']} ({p['ticker']}): {p['quantidade']} unidades, preço médio R${p['preco_medio_compra']}\n"
-    if fundos:
-        carteira += "\n=== FUNDOS ===\n"
-        for p in fundos:
-            carteira += f"{p['ativos_fundos']['nome']} ({p['ativos_fundos']['categoria']}): {p['numero_cotas']} cotas, aplicado R${p['valor_aplicado']}\n"
-    if rf:
-        carteira += "\n=== RENDA FIXA ===\n"
-        for p in rf:
-            carteira += f"{p['ativos_renda_fixa']['nome']}: R${p['valor_aplicado']}, taxa {p['taxa_contratada']} {p['unidade_taxa']}, vence {p['data_vencimento']}\n"
-
-    rel = sb.table("relatorios").select("mes, conteudo_txt").eq("fonte", "XP").eq("tipo", "macro_mensal").lte("mes", mes).order("mes", desc=True).limit(1).single().execute().data
-    aviso = f"[Relatório de {rel['mes']}]\n\n" if rel["mes"] != mes else ""
-    relatorio = aviso + rel["conteudo_txt"]
-
-    prompt = f"""## Financial Advisor — Monthly Recommendation
-
-### Role:
-You are an experienced financial advisor at XP Investimentos preparing a personalized monthly recommendation for a middle-market client.
-
-### Task:
-Based on the three inputs below, write a concise, professional monthly recommendation letter in Portuguese (Brazil), up to 2 pages (~500 words).
-
-### The letter must include:
-1. A brief greeting addressing the client by name
-2. A summary of the client's current portfolio
-3. Macroeconomic context from the XP report and how it affects this client's positions
-4. Specific recommendations (buy / sell / hold) aligned with the client's risk profile and the macro outlook
-5. A professional sign-off
-
-### Style:
-- Written entirely in Portuguese (Brazil)
-- Formal, confident, and client-facing
-- Use flowing paragraphs, not bullet points
-
----
-
-### Input 1 — Client Risk Profile:
-{perfil}
-
----
-
-### Input 2 — Client Portfolio:
-{carteira}
-
----
-
-### Input 3 — XP Macro Report:
-{relatorio}"""
-
-    client = OpenAI(api_key=st.secrets["OPENAI_KEY"].strip())
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=1500,
-        temperature=0.5,
+    """Envia cliente_id e mes ao Rivet server, que busca dados no Supabase,
+    monta o prompt e chama a OpenAI, retornando a recomendacao pronta."""
+    resp = http.post(
+        RIVET_SERVER_URL,
+        json={"cliente_id": cliente_id, "mes": mes},
+        timeout=120,
     )
-    return response.choices[0].message.content
+    resp.raise_for_status()
+    data = resp.json()
+    return data["recomendacao"]["value"]
 
 # ── Navegação ─────────────────────────────────────────────────────────────────
 
