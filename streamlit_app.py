@@ -51,7 +51,11 @@ def gerar_recomendacao(cliente_id: str, mes: str) -> str:
     # 1. Disparar
     resp = http.post(
         functions_url() + "/gerar-recomendacao",
-        headers={**auth_header(), "Content-Type": "application/json"},
+        headers={
+            **auth_header(),
+            "apikey": st.secrets["SUPABASE_KEY"].strip(),
+            "Content-Type": "application/json",
+        },
         json={"cliente_id": cliente_id, "mes": mes},
         timeout=30,
     )
