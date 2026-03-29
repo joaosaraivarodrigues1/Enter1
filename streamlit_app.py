@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+import time
+
 import streamlit as st
 import pandas as pd
 import requests as http
@@ -44,19 +46,36 @@ def functions_url():
 def auth_header():
     return {"Authorization": f"Bearer {st.secrets['SUPABASE_KEY'].strip()}"}
 
-RIVET_SERVER_URL = "http://localhost:3000"
-
 def gerar_recomendacao(cliente_id: str, mes: str) -> str:
-    """Envia cliente_id e mes ao Rivet server, que busca dados no Supabase,
-    monta o prompt e chama a OpenAI, retornando a recomendacao pronta."""
+    """Dispara a Edge Function, recebe job_id e faz polling até status=done."""
+    # 1. Disparar
     resp = http.post(
-        RIVET_SERVER_URL,
+        functions_url() + "/gerar-recomendacao",
+        headers={**auth_header(), "Content-Type": "application/json"},
         json={"cliente_id": cliente_id, "mes": mes},
-        timeout=120,
+        timeout=30,
     )
     resp.raise_for_status()
-    data = resp.json()
-    return data["recomendacao"]["value"]
+    job_id = resp.json()["job_id"]
+
+    # 2. Polling na tabela recomendacoes (até 5 minutos)
+    sb = get_supabase()
+    for _ in range(100):
+        time.sleep(3)
+        row = (
+            sb.table("recomendacoes")
+            .select("status, resultado, erro")
+            .eq("job_id", job_id)
+            .single()
+            .execute()
+            .data
+        )
+        if row["status"] == "done":
+            return row["resultado"]
+        if row["status"] == "error":
+            raise RuntimeError(row.get("erro") or "Erro no processamento Rivet")
+
+    raise TimeoutError("Timeout: recomendação não foi gerada em 5 minutos")
 
 # ── Navegação ─────────────────────────────────────────────────────────────────
 
